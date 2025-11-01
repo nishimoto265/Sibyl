@@ -91,13 +91,11 @@ class TmuxLayoutManager:
         self._maybe_wait()
 
     def send_instruction_to_pane(self, *, pane_id: str, instruction: str) -> None:
-        pane = self._get_pane(pane_id)
-        pane.send_keys(instruction, enter=True)
+        self._send_text(pane_id, instruction)
 
     def send_instruction_to_workers(self, fork_map: Mapping[str, str], instruction: str) -> None:
         for pane_id in fork_map:
-            pane = self._get_pane(pane_id)
-            pane.send_keys(instruction, enter=True)
+            self._send_text(pane_id, instruction)
 
     def promote_to_main(self, *, session_id: str, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
@@ -135,6 +133,11 @@ class TmuxLayoutManager:
     def _maybe_wait(self) -> None:
         if self.startup_delay > 0:
             time.sleep(self.startup_delay)
+
+    def _send_text(self, pane_id: str, text: str) -> None:
+        pane = self._get_pane(pane_id)
+        pane.cmd("send-keys", "-t", pane_id, "-l", text)
+        pane.cmd("send-keys", "-t", pane_id, "Enter")
 
 
 class WorktreeManager:
