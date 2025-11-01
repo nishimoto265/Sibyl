@@ -9,3 +9,15 @@
     - "uv run pytest"
   result: "tests 10 passed"
   notes: "実TMUX制御はlibtmuxスタブで検証、実環境でのキー送出確認が今後の確認事項"
+- date: "2025-11-01"
+  time_utc: "11:30:00"
+  summary: "Boss採点・スコアボード・ユーザー選択・mainマージまで実装"
+  details:
+    - "WorktreeManagerにboss用ワークツリーとfast-forwardマージ機能を追加"
+    - "CodexMonitorでmanual session登録をサポートし、bossセッション投入を自動化"
+    - "Orchestratorに候補リスト/選択フローを導入し、CLIでスコア入力〜採用選択のUIを実装"
+    - "BossManagerでスコアボード集計、LogManagerで結果を記録"
+  reproduce:
+    - "uv run pytest"
+  result: "tests 12 passed"
+  notes: "実環境ではBossワークツリーで改良した成果をmainへマージ後、codex resumeにより継続可能"

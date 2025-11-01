@@ -34,6 +34,25 @@ def test_worktree_manager_creates_isolated_worktrees(git_repo: Path):
         git_repo / ".parallel-dev" / "worktrees" / "worker-2",
     ]
     assert sorted(worker_dirs) == sorted(expected)
+    assert manager.boss_path.is_dir()
+
+
+def test_merge_into_main_fast_forward(git_repo: Path):
+    manager = WorktreeManager(root=git_repo, worker_count=1)
+    mapping = manager.prepare()
+
+    worker_path = mapping["worker-1"]
+    worker_repo = git.Repo(worker_path)
+    new_file = worker_path / "feature.txt"
+    new_file.write_text("feature branch change\n", encoding="utf-8")
+    worker_repo.index.add([str(new_file)])
+    worker_repo.index.commit("Add feature file")
+
+    manager.merge_into_main(manager.worker_branch("worker-1"))
+
+    main_repo = git.Repo(git_repo)
+    assert (git_repo / "feature.txt").exists()
+    assert main_repo.is_dirty() is False
 
 
 def test_worktree_manager_requires_initial_commit(tmp_path: Path):

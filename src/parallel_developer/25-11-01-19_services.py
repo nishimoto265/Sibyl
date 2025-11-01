@@ -8,13 +8,13 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 import git
 import libtmux
 import yaml
 
-from .orchestrator import OrchestrationResult
+from .orchestrator import CandidateInfo, SelectionDecision
 
 class TmuxLayoutManager:
     """Manage tmux session layout for parallel Codex agents."""
@@ -142,6 +142,9 @@ class WorktreeManager:
         self._repo = git.Repo(self.root)
         self._ensure_repo_initialized()
         self.worktrees_dir = self.root / ".parallel-dev" / "worktrees"
+        self.boss_path = self.root / ".parallel-dev" / "boss"
+        self._worker_branch_template = "parallel-dev/{name}"
+        self._boss_branch = "parallel-dev/boss"
 
     def prepare(self) -> Dict[str, Path]:
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -149,24 +152,10 @@ class WorktreeManager:
         for index in range(1, self.worker_count + 1):
             worker_name = f"worker-{index}"
             worktree_path = self.worktrees_dir / worker_name
-            branch_name = f"parallel-dev/{worker_name}"
-
-            if worktree_path.exists():
-                try:
-                    self._repo.git.worktree("remove", "--force", str(worktree_path))
-                except git.GitCommandError:
-                    shutil.rmtree(worktree_path, ignore_errors=True)
-            if worktree_path.exists():
-                shutil.rmtree(worktree_path, ignore_errors=True)
-
-            self._repo.git.worktree(
-                "add",
-                "-B",
-                branch_name,
-                str(worktree_path),
-                "HEAD",
-            )
+            branch_name = self.worker_branch(worker_name)
+            self._recreate_worktree(worktree_path, branch_name)
             mapping[worker_name] = worktree_path
+        self._recreate_worktree(self.boss_path, self.boss_branch)
         return mapping
 
     def _ensure_repo_initialized(self) -> None:
@@ -176,6 +165,34 @@ class WorktreeManager:
             raise RuntimeError(
                 "Git repository has no commits. Create an initial commit before running parallel-dev."
             ) from exc
+
+    def _recreate_worktree(self, path: Path, branch_name: str) -> None:
+        if path.exists():
+            try:
+                self._repo.git.worktree("remove", "--force", str(path))
+            except git.GitCommandError:
+                shutil.rmtree(path, ignore_errors=True)
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+        self._repo.git.worktree(
+            "add",
+            "-B",
+            branch_name,
+            str(path),
+            "HEAD",
+        )
+
+    def worker_branch(self, worker_name: str) -> str:
+        return self._worker_branch_template.format(name=worker_name)
+
+    @property
+    def boss_branch(self) -> str:
+        return self._boss_branch
+
+    def merge_into_main(self, branch_name: str) -> None:
+        if self._repo.is_dirty(untracked_files=False):
+            raise RuntimeError("Main repository has uncommitted changes; cannot merge results.")
+        self._repo.git.merge(branch_name, "--ff-only")
 
 
 class CodexMonitor:
@@ -299,6 +316,22 @@ class CodexMonitor:
         suffix = int(time.time() * 1000)
         return f"auto-{pane_id.strip('%')}-{suffix}"
 
+    def register_manual_session(
+        self,
+        *,
+        pane_id: str,
+        session_id: Optional[str] = None,
+    ) -> str:
+        session_id = session_id or self._generate_session_id(pane_id)
+        rollout_path = self.logs_dir / "sessions" / f"{session_id}.jsonl"
+        rollout_path.touch(exist_ok=True)
+        self.register_session(
+            pane_id=pane_id,
+            session_id=session_id,
+            rollout_path=rollout_path,
+        )
+        return session_id
+
     def _load_map(self) -> Dict[str, Any]:
         text = self.session_map_path.read_text(encoding="utf-8")
         if not text.strip():
@@ -322,40 +355,36 @@ class CodexMonitor:
 
 
 class BossManager:
-    """Score worker sessions and choose the best candidate."""
+    """Score worker sessions and compile scoreboard information."""
 
     def __init__(self) -> None:
         pass
 
-    def select_best(
+    def finalize_scores(
         self,
-        *,
-        main_session_id: str,
-        worker_sessions: Mapping[str, str],
+        candidates: List[CandidateInfo],
+        decision: SelectionDecision,
         completion: Mapping[str, Any],
-    ) -> Any:
+    ) -> Dict[str, Dict[str, Any]]:
         summary: Dict[str, Dict[str, Any]] = {}
-        best_session: Optional[str] = None
-        best_score = float("-inf")
-
-        for session_id, info in completion.items():
-            done = bool(info.get("done"))
-            score = float(info.get("score", 0.0))
-            summary[session_id] = {
-                "done": done,
+        for candidate in candidates:
+            score = float(decision.scores.get(candidate.key, 0.0))
+            comment = decision.comments.get(candidate.key, "")
+            session_id = candidate.session_id
+            entry: Dict[str, Any] = {
                 "score": score,
-                **{k: v for k, v in info.items() if k not in {"done", "score"}},
+                "comment": comment,
+                "session_id": session_id,
+                "branch": candidate.branch,
+                "worktree": str(candidate.worktree),
             }
-            if not done:
-                continue
-            if score > best_score:
-                best_score = score
-                best_session = session_id
-
-        if best_session is None:
-            raise RuntimeError("No completed sessions available for selection")
-
-        return OrchestrationResult(selected_session=best_session, sessions_summary=summary)
+            if session_id and session_id in completion:
+                comp_info = completion[session_id]
+                entry.update(comp_info)
+            else:
+                entry.setdefault("done", True)
+            summary[candidate.key] = entry
+        return summary
 
 
 class LogManager:

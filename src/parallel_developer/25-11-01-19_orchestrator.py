@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, MutableMapping, Sequence
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Sequence
 
 
 @dataclass(slots=True)
@@ -12,6 +13,22 @@ class OrchestrationResult:
 
     selected_session: str
     sessions_summary: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class CandidateInfo:
+    key: str
+    label: str
+    session_id: Optional[str]
+    branch: str
+    worktree: Path
+
+
+@dataclass(slots=True)
+class SelectionDecision:
+    selected_key: str
+    scores: Dict[str, float]
+    comments: Dict[str, str] = field(default_factory=dict)
 
 
 class Orchestrator:
@@ -36,33 +53,47 @@ class Orchestrator:
         self._worker_count = worker_count
         self._session_name = session_name
 
-    def run_cycle(self, instruction: str) -> OrchestrationResult:
+    def run_cycle(
+        self,
+        instruction: str,
+        selector: Callable[[List[CandidateInfo]], SelectionDecision],
+    ) -> OrchestrationResult:
         """Execute a single orchestrated instruction cycle."""
 
-        worker_roots = list(self._worktree.prepare().values())
+        if selector is None:
+            raise ValueError("selector must be provided to choose a candidate.")
+
+        worker_roots = self._worktree.prepare()
+        boss_path = self._worktree.boss_path
 
         layout = self._ensure_layout()
         main_pane = layout["main"]
         boss_pane = layout["boss"]
         worker_panes = layout["workers"]
 
-        pane_to_worker_path = {}
-        for idx, pane_id in enumerate(worker_panes):
-            path = worker_roots[idx] if idx < len(worker_roots) else self._worktree.root
-            pane_to_worker_path[pane_id] = path
+        worker_names = [f"worker-{idx + 1}" for idx in range(len(worker_panes))]
+        pane_to_worker_name = dict(zip(worker_panes, worker_names))
+        pane_to_worker_path = {
+            pane_id: worker_roots.get(pane_to_worker_name[pane_id], self._worktree.root)
+            for pane_id in worker_panes
+        }
 
         self._tmux.launch_main_session(pane_id=main_pane)
         self._tmux.launch_boss_session(pane_id=boss_pane)
 
+        boss_session_id = self._monitor.register_manual_session(pane_id=boss_pane)
+
+        formatted_instruction = self._ensure_done_directive(instruction)
+
         self._tmux.send_instruction_to_pane(
             pane_id=main_pane,
-            instruction=instruction,
+            instruction=formatted_instruction,
         )
         self._tmux.interrupt_pane(pane_id=main_pane)
 
         main_session_id = self._monitor.capture_instruction(
             pane_id=main_pane,
-            instruction=instruction,
+            instruction=formatted_instruction,
         )
 
         fork_map = self._tmux.fork_workers(
@@ -70,29 +101,66 @@ class Orchestrator:
             base_session_id=main_session_id,
         )
 
-        self._tmux.resume_workers(fork_map, pane_to_worker_path)
-        self._tmux.send_instruction_to_workers(fork_map, instruction)
+        resume_paths = {
+            pane_id: pane_to_worker_path.get(pane_id, self._worktree.root)
+            for pane_id in fork_map
+        }
+        self._tmux.resume_workers(fork_map, resume_paths)
+        self._tmux.send_instruction_to_workers(fork_map, formatted_instruction)
 
         completion_info = self._monitor.await_completion(
             session_ids=list(fork_map.values())
         )
 
-        result = self._boss.select_best(
-            main_session_id=main_session_id,
-            worker_sessions=fork_map,
-            completion=completion_info,
-        )
-
-        if not isinstance(result, OrchestrationResult):
-            raise TypeError(
-                "boss_manager.select_best must return OrchestrationResult, "
-                f"got {type(result)!r}"
+        candidates: List[CandidateInfo] = []
+        for pane_id, session_id in fork_map.items():
+            worker_name = pane_to_worker_name[pane_id]
+            branch_name = self._worktree.worker_branch(worker_name)
+            worktree_path = Path(pane_to_worker_path.get(pane_id, self._worktree.root))
+            candidates.append(
+                CandidateInfo(
+                    key=worker_name,
+                    label=f"{worker_name} (session {session_id})",
+                    session_id=session_id,
+                    branch=branch_name,
+                    worktree=worktree_path,
+                )
             )
 
-        self._tmux.promote_to_main(session_id=result.selected_session, pane_id=main_pane)
+        candidates.append(
+            CandidateInfo(
+                key="boss",
+                label=f"boss (session {boss_session_id})",
+                session_id=boss_session_id,
+                branch=self._worktree.boss_branch,
+                worktree=Path(boss_path),
+            )
+        )
+
+        decision = selector(candidates)
+        candidate_keys = {candidate.key for candidate in candidates}
+        if decision.selected_key not in candidate_keys:
+            raise ValueError(
+                f"Selector returned unknown candidate '{decision.selected_key}'. "
+                f"Known candidates: {sorted(candidate_keys)}"
+            )
+
+        scoreboard = self._boss.finalize_scores(candidates, decision, completion_info)
+
+        selected_info = next(candidate for candidate in candidates if candidate.key == decision.selected_key)
+        if selected_info.session_id is None:
+            raise RuntimeError("Selected candidate has no session id; cannot resume main session.")
+
+        self._worktree.merge_into_main(selected_info.branch)
+        self._tmux.promote_to_main(session_id=selected_info.session_id, pane_id=main_pane)
+
+        result = OrchestrationResult(
+            selected_session=selected_info.session_id,
+            sessions_summary=scoreboard,
+        )
 
         self._log.record_cycle(
-            instruction=instruction,
+            instruction=formatted_instruction,
             layout=layout,
             fork_map=fork_map,
             completion=completion_info,
@@ -123,3 +191,12 @@ class Orchestrator:
                 "tmux_manager.ensure_layout returned "
                 f"{len(workers)} workers but {self._worker_count} expected"
             )
+
+    def _ensure_done_directive(self, instruction: str) -> str:
+        marker = "/done"
+        if marker in instruction:
+            return instruction
+        directive = (
+            "\n\nWhen you have completed the requested work, respond with exactly `/done`."
+        )
+        return instruction.rstrip() + directive

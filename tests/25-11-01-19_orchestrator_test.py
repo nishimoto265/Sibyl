@@ -1,9 +1,14 @@
 from pathlib import Path
+from typing import List
 from unittest.mock import Mock
 
 import pytest
 
-from parallel_developer.orchestrator import Orchestrator, OrchestrationResult
+from parallel_developer.orchestrator import (
+    CandidateInfo,
+    Orchestrator,
+    SelectionDecision,
+)
 
 
 @pytest.fixture
@@ -11,6 +16,9 @@ def dependencies():
     tmux = Mock(name="tmux_manager")
     worktree = Mock(name="worktree_manager")
     worktree.root = Path("/repo")
+    worktree.boss_path = Path("/repo/.parallel-dev/boss")
+    worktree.boss_branch = "parallel-dev/boss"
+    worktree.worker_branch.side_effect = lambda name: f"parallel-dev/{name}"
     monitor = Mock(name="monitor")
     boss = Mock(name="boss_manager")
     logger = Mock(name="log_manager")
@@ -43,15 +51,14 @@ def dependencies():
         "session-worker-3": {"done": True},
     }
 
-    boss.select_best.return_value = OrchestrationResult(
-        selected_session="session-worker-2",
-        sessions_summary={
-            "session-main": {"score": 0},
-            "session-worker-1": {"score": 60},
-            "session-worker-2": {"score": 95},
-            "session-worker-3": {"score": 80},
-        },
-    )
+    monitor.register_manual_session.return_value = "session-boss"
+
+    boss.finalize_scores.return_value = {
+        "worker-1": {"score": 60},
+        "worker-2": {"score": 70},
+        "worker-3": {"score": 50},
+        "boss": {"score": 95},
+    }
 
     return {
         "tmux": tmux,
@@ -61,6 +68,7 @@ def dependencies():
         "logger": logger,
         "instruction": instruction,
         "fork_map": fork_map,
+        "boss_scores": boss.finalize_scores.return_value,
     }
 
 
@@ -75,7 +83,20 @@ def test_orchestrator_runs_happy_path(dependencies):
         session_name="parallel-dev",
     )
 
-    result = orchestrator.run_cycle(dependencies["instruction"])
+    def selector(candidates: List[CandidateInfo]) -> SelectionDecision:
+        assert {c.key for c in candidates} == {"worker-1", "worker-2", "worker-3", "boss"}
+        return SelectionDecision(
+            selected_key="boss",
+            scores={
+                "worker-1": 60,
+                "worker-2": 70,
+                "worker-3": 50,
+                "boss": 95,
+            },
+            comments={"boss": "Best integration"},
+        )
+
+    result = orchestrator.run_cycle(dependencies["instruction"], selector=selector)
 
     dependencies["worktree"].prepare.assert_called_once()
     tmux = dependencies["tmux"]
@@ -89,14 +110,14 @@ def test_orchestrator_runs_happy_path(dependencies):
     )
     tmux.launch_main_session.assert_called_once_with(pane_id="pane-main")
     tmux.launch_boss_session.assert_called_once_with(pane_id="pane-boss")
-    tmux.send_instruction_to_pane.assert_called_once_with(
-        pane_id="pane-main",
-        instruction=dependencies["instruction"],
-    )
+    monitor.register_manual_session.assert_called_once_with(pane_id="pane-boss")
+    main_instruction = tmux.send_instruction_to_pane.call_args.kwargs["instruction"]
+    assert "/done" in main_instruction
+    assert tmux.send_instruction_to_pane.call_args.kwargs["pane_id"] == "pane-main"
     tmux.interrupt_pane.assert_called_once_with(pane_id="pane-main")
     monitor.capture_instruction.assert_called_once_with(
         pane_id="pane-main",
-        instruction=dependencies["instruction"],
+        instruction=main_instruction,
     )
     tmux.fork_workers.assert_called_once_with(
         workers=["pane-worker-1", "pane-worker-2", "pane-worker-3"],
@@ -104,15 +125,17 @@ def test_orchestrator_runs_happy_path(dependencies):
     )
     tmux.resume_workers.assert_called_once()
     tmux.send_instruction_to_workers.assert_called_once_with(
-        dependencies["fork_map"], dependencies["instruction"]
+        dependencies["fork_map"], main_instruction
     )
     monitor.await_completion.assert_called_once_with(
         session_ids=list(dependencies["fork_map"].values())
     )
-    dependencies["boss"].select_best.assert_called_once()
+    dependencies["boss"].finalize_scores.assert_called_once()
+    worktree.merge_into_main.assert_called_once_with("parallel-dev/boss")
     tmux.promote_to_main.assert_called_once_with(
-        session_id="session-worker-2",
+        session_id="session-boss",
         pane_id="pane-main",
     )
     dependencies["logger"].record_cycle.assert_called_once()
-    assert result.selected_session == "session-worker-2"
+    assert result.selected_session == "session-boss"
+    assert result.sessions_summary == dependencies["boss_scores"]

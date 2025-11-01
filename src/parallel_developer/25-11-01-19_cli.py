@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Dict, List, Optional
 
 import typer
 
-from .orchestrator import Orchestrator
+from .orchestrator import CandidateInfo, Orchestrator, SelectionDecision
 from .services import (
     BossManager,
     CodexMonitor,
@@ -41,8 +41,20 @@ def main(
     """Execute a full orchestrated cycle for the given instruction."""
 
     orchestrator = build_orchestrator(worker_count=workers, log_dir=log_dir)
-    result = orchestrator.run_cycle(instruction)
-    typer.echo(f"[parallel-dev] Selected session: {result.selected_session}")
+    decision_selector = build_interactive_selector()
+    result = orchestrator.run_cycle(instruction, selector=decision_selector)
+
+    typer.echo("\n=== Final Scoreboard ===")
+    for key, data in sorted(
+        result.sessions_summary.items(),
+        key=lambda item: item[1].get("score", 0.0),
+        reverse=True,
+    ):
+        score = data.get("score", 0.0)
+        comment = data.get("comment", "")
+        typer.echo(f"{key:>10}: {score:.2f}" + (f"  # {comment}" if comment else ""))
+
+    typer.echo(f"\n[parallel-dev] Selected session: {result.selected_session}")
 
 
 def build_orchestrator(worker_count: int, log_dir: Optional[Path]) -> Orchestrator:
@@ -82,3 +94,57 @@ def build_orchestrator(worker_count: int, log_dir: Optional[Path]) -> Orchestrat
         worker_count=worker_count,
         session_name=session_name,
     )
+
+
+def build_interactive_selector():
+    """Create a selector callable that prompts the user for scores and a choice."""
+
+    def selector(candidates: List[CandidateInfo]) -> SelectionDecision:
+        typer.echo("=== Candidate Evaluation ===")
+        scores: Dict[str, float] = {}
+        comments: Dict[str, str] = {}
+
+        for candidate in candidates:
+            typer.echo(
+                f"[{candidate.key}] {candidate.label} | branch={candidate.branch} | worktree={candidate.worktree}"
+            )
+            score = typer.prompt(
+                f"Score for {candidate.key}",
+                type=float,
+                default=0.0,
+            )
+            comment = typer.prompt(
+                f"Comment for {candidate.key} (optional)",
+                default="",
+            )
+            scores[candidate.key] = score
+            if comment.strip():
+                comments[candidate.key] = comment.strip()
+
+        sorted_keys = sorted(scores, key=lambda k: scores[k], reverse=True)
+        default_choice = sorted_keys[0] if sorted_keys else candidates[0].key
+        available = ", ".join(sorted(scores.keys()))
+        selection = typer.prompt(
+            f"Select candidate to adopt ({available})",
+            default=default_choice,
+        )
+        while selection not in scores:
+            selection = typer.prompt(
+                f"Invalid choice. Select one of ({available})",
+                default=default_choice,
+            )
+
+        typer.echo("\n=== Provisional Scoreboard ===")
+        for key in sorted_keys:
+            summary = f"{scores[key]:.2f}"
+            if key == selection:
+                summary += "  <-- selected"
+            typer.echo(f"{key:>10}: {summary}")
+
+        return SelectionDecision(
+            selected_key=selection,
+            scores=scores,
+            comments=comments,
+        )
+
+    return selector
