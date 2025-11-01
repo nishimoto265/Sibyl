@@ -63,6 +63,7 @@ class Orchestrator:
         worker_roots = self._worktree.prepare()
         boss_path = self._worktree.boss_path
 
+        baseline = self._monitor.snapshot_rollouts()
         layout = self._ensure_layout()
         main_pane = layout["main"]
         boss_pane = layout["boss"]
@@ -76,9 +77,11 @@ class Orchestrator:
         }
 
         self._tmux.launch_main_session(pane_id=main_pane)
-        self._tmux.launch_boss_session(pane_id=boss_pane)
+        main_session_id = self._monitor.register_new_rollout(pane_id=main_pane, baseline=baseline)
 
-        boss_session_id = self._monitor.register_manual_session(pane_id=boss_pane)
+        baseline = self._monitor.snapshot_rollouts()
+        self._tmux.launch_boss_session(pane_id=boss_pane)
+        boss_session_id = self._monitor.register_new_rollout(pane_id=boss_pane, baseline=baseline)
 
         formatted_instruction = self._ensure_done_directive(instruction)
 
@@ -88,19 +91,24 @@ class Orchestrator:
         )
         self._tmux.interrupt_pane(pane_id=main_pane)
 
-        main_session_id = self._monitor.capture_instruction(
+        self._monitor.capture_instruction(
             pane_id=main_pane,
             instruction=formatted_instruction,
         )
 
-        fork_map = self._tmux.fork_workers(
+        baseline = self._monitor.snapshot_rollouts()
+        worker_pane_list = self._tmux.fork_workers(
             workers=worker_panes,
             base_session_id=main_session_id,
+        )
+        fork_map = self._monitor.register_worker_rollouts(
+            worker_panes=worker_pane_list,
+            baseline=baseline,
         )
 
         resume_paths = {
             pane_id: pane_to_worker_path.get(pane_id, self._worktree.root)
-            for pane_id in fork_map
+            for pane_id in worker_pane_list
         }
         self._tmux.resume_workers(fork_map, resume_paths)
         self._tmux.send_instruction_to_workers(fork_map, formatted_instruction)
@@ -117,12 +125,12 @@ class Orchestrator:
             candidates.append(
                 CandidateInfo(
                     key=worker_name,
-                    label=f"{worker_name} (session {session_id})",
-                    session_id=session_id,
-                    branch=branch_name,
-                    worktree=worktree_path,
-                )
+                label=f"{worker_name} (session {session_id})",
+                session_id=session_id,
+                branch=branch_name,
+                worktree=worktree_path,
             )
+        )
 
         candidates.append(
             CandidateInfo(

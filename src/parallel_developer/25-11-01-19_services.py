@@ -8,7 +8,7 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import git
 import libtmux
@@ -78,10 +78,7 @@ class TmuxLayoutManager:
             pane = self._get_pane(pane_id)
             for key in ("Escape", "Escape", "Enter"):
                 pane.cmd("send-keys", "-t", pane_id, key)
-        return self.monitor.await_new_sessions(
-            worker_panes=worker_list,
-            base_session_id=base_session_id,
-        )
+        return worker_list
 
     def resume_workers(self, fork_map: Mapping[str, str], pane_paths: Mapping[str, Path]) -> None:
         for pane_id, session_id in fork_map.items():
@@ -205,7 +202,14 @@ class WorktreeManager:
 class CodexMonitor:
     """Inspect Codex rollout JSONL files and monitor completion."""
 
-    def __init__(self, logs_dir: Path, session_map_path: Path, *, poll_interval: float = 1.0) -> None:
+    def __init__(
+        self,
+        logs_dir: Path,
+        session_map_path: Path,
+        *,
+        codex_sessions_root: Optional[Path] = None,
+        poll_interval: float = 1.0,
+    ) -> None:
         self.logs_dir = Path(logs_dir)
         self.session_map_path = Path(session_map_path)
         self.poll_interval = poll_interval
@@ -213,6 +217,11 @@ class CodexMonitor:
         (self.logs_dir / "sessions").mkdir(parents=True, exist_ok=True)
         if not self.session_map_path.exists():
             self.session_map_path.write_text("{}\n", encoding="utf-8")
+        self.codex_sessions_root = (
+            Path(codex_sessions_root)
+            if codex_sessions_root is not None
+            else Path.home() / ".codex" / "sessions"
+        )
 
     def register_session(self, *, pane_id: str, session_id: str, rollout_path: Path) -> None:
         data = self._load_map()
@@ -228,15 +237,61 @@ class CodexMonitor:
         }
         self._write_map(data)
 
+    def snapshot_rollouts(self) -> Dict[Path, float]:
+        if not self.codex_sessions_root.exists():
+            return {}
+        result: Dict[Path, float] = {}
+        for path in self.codex_sessions_root.glob("**/rollout-*.jsonl"):
+            try:
+                result[path] = path.stat().st_mtime
+            except FileNotFoundError:
+                continue
+        return result
+
+    def register_new_rollout(
+        self,
+        *,
+        pane_id: str,
+        baseline: Mapping[Path, float],
+        timeout_seconds: float = 30.0,
+    ) -> str:
+        paths = self._wait_for_new_rollouts(baseline, expected=1, timeout_seconds=timeout_seconds)
+        if not paths:
+            raise TimeoutError("Failed to detect new Codex session rollout")
+        rollout_path = paths[0]
+        session_id = self._parse_session_meta(rollout_path)
+        self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=rollout_path)
+        return session_id
+
+    def register_worker_rollouts(
+        self,
+        *,
+        worker_panes: Sequence[str],
+        baseline: Mapping[Path, float],
+        timeout_seconds: float = 30.0,
+    ) -> Dict[str, str]:
+        if not worker_panes:
+            return {}
+        paths = self._wait_for_new_rollouts(
+            baseline,
+            expected=len(worker_panes),
+            timeout_seconds=timeout_seconds,
+        )
+        paths = paths[: len(worker_panes)]
+        fork_map: Dict[str, str] = {}
+        for pane_id, path in zip(worker_panes, paths):
+            session_id = self._parse_session_meta(path)
+            self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=path)
+            fork_map[pane_id] = session_id
+        return fork_map
+
     def capture_instruction(self, *, pane_id: str, instruction: str) -> str:
         data = self._load_map()
         pane_entry = data.get("panes", {}).get(pane_id)
         if pane_entry is None:
-            session_id = self._generate_session_id(pane_id)
-            rollout_path = self.logs_dir / "sessions" / f"{session_id}.jsonl"
-            rollout_path.touch(exist_ok=True)
-            self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=rollout_path)
-            pane_entry = {"session_id": session_id}
+            raise RuntimeError(
+                f"Pane {pane_id!r} is not registered in session_map; ensure Codex session detection succeeded."
+            )
 
         instruction_log = self.logs_dir / "instruction.log"
         with instruction_log.open("a", encoding="utf-8") as fh:
@@ -281,63 +336,40 @@ class CodexMonitor:
 
         return completion
 
-    def await_new_sessions(
+    def _wait_for_new_rollouts(
         self,
+        baseline: Mapping[Path, float],
         *,
-        worker_panes: Iterable[str],
-        base_session_id: str,
-        timeout_seconds: Optional[float] = 30.0,
-    ) -> Dict[str, str]:
-        remaining = set(worker_panes)
-        discovered: Dict[str, str] = {}
-        deadline = None if timeout_seconds is None else time.time() + timeout_seconds
-
-        while remaining:
-            data = self._load_map()
-            panes = data.get("panes", {})
-            for pane_id in list(remaining):
-                entry = panes.get(pane_id)
-                if entry is None:
-                    continue
-                session_id = entry.get("session_id")
-                if session_id and session_id != base_session_id:
-                    discovered[pane_id] = session_id
-                    remaining.remove(pane_id)
-            if not remaining:
-                break
-            if deadline is not None and time.time() >= deadline:
-                break
+        expected: int,
+        timeout_seconds: float,
+    ) -> List[Path]:
+        deadline = time.time() + timeout_seconds
+        baseline_paths = set(baseline.keys())
+        while True:
+            current = self.snapshot_rollouts()
+            new_paths = [path for path in current.keys() if path not in baseline_paths]
+            if len(new_paths) >= expected:
+                new_paths.sort(key=lambda p: current.get(p, 0.0))
+                return new_paths
+            if time.time() >= deadline:
+                new_paths.sort(key=lambda p: current.get(p, 0.0))
+                return new_paths
             time.sleep(self.poll_interval)
 
-        for pane_id in list(remaining):
-            session_id = self._generate_session_id(pane_id)
-            rollout_path = self.logs_dir / "sessions" / f"{session_id}.jsonl"
-            rollout_path.touch(exist_ok=True)
-            self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=rollout_path)
-            discovered[pane_id] = session_id
-            remaining.remove(pane_id)
-
-        return discovered
-
-    def _generate_session_id(self, pane_id: str) -> str:
+    def _parse_session_meta(self, rollout_path: Path) -> str:
+        try:
+            with rollout_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("type") == "session_meta" and "payload" in obj:
+                        return obj["payload"].get("id")
+        except FileNotFoundError:
+            pass
         suffix = int(time.time() * 1000)
-        return f"auto-{pane_id.strip('%')}-{suffix}"
-
-    def register_manual_session(
-        self,
-        *,
-        pane_id: str,
-        session_id: Optional[str] = None,
-    ) -> str:
-        session_id = session_id or self._generate_session_id(pane_id)
-        rollout_path = self.logs_dir / "sessions" / f"{session_id}.jsonl"
-        rollout_path.touch(exist_ok=True)
-        self.register_session(
-            pane_id=pane_id,
-            session_id=session_id,
-            rollout_path=rollout_path,
-        )
-        return session_id
+        return f"unknown-{suffix}"
 
     def _load_map(self) -> Dict[str, Any]:
         text = self.session_map_path.read_text(encoding="utf-8")

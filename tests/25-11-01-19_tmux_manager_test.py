@@ -69,10 +69,6 @@ def monkeypatch_server(monkeypatch):
 
 def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     monitor = Mock()
-    monitor.await_new_sessions.return_value = {
-        "%2": "session-worker-1",
-        "%3": "session-worker-2",
-    }
 
     manager = TmuxLayoutManager(
         session_name="parallel-dev",
@@ -94,16 +90,16 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     initial_map = {layout["workers"][0]: "session-worker-1"}
     manager.send_instruction_to_workers(fork_map=initial_map, instruction="echo worker")
 
-    fork_map = manager.fork_workers(workers=layout["workers"], base_session_id="session-main")
-    assert fork_map == {
-        layout["workers"][0]: "session-worker-1",
-        layout["workers"][1]: "session-worker-2",
-    }
-    monitor.await_new_sessions.assert_called_once()
+    fork_list = manager.fork_workers(workers=layout["workers"], base_session_id="session-main")
+    assert fork_list == ["%2", "%3"]
 
     worker_paths = {
         layout["workers"][0]: Path("/repo/.parallel-dev/worktrees/worker-1"),
         layout["workers"][1]: Path("/repo/.parallel-dev/worktrees/worker-2"),
+    }
+    fork_map = {
+        layout["workers"][0]: "session-worker-1",
+        layout["workers"][1]: "session-worker-2",
     }
     manager.resume_workers(fork_map, worker_paths)
     manager.send_instruction_to_workers(fork_map, "echo worker")

@@ -51,8 +51,13 @@ def dependencies():
         "session-worker-3": {"done": True},
     }
 
-    monitor.register_manual_session.return_value = "session-boss"
-
+    monitor.snapshot_rollouts.side_effect = [
+        {},  # before ensure_layout
+        {Path("/rollout-main"): 1.0},
+        {Path("/rollout-main"): 1.0},
+    ]
+    monitor.register_new_rollout.side_effect = ["session-main", "session-boss"]
+    monitor.register_worker_rollouts.return_value = fork_map
     boss_scores = {
         "worker-1": {"score": 60},
         "worker-2": {"score": 70},
@@ -105,7 +110,8 @@ def test_orchestrator_runs_happy_path(dependencies):
     )
     tmux.launch_main_session.assert_called_once_with(pane_id="pane-main")
     tmux.launch_boss_session.assert_called_once_with(pane_id="pane-boss")
-    monitor.register_manual_session.assert_called_once_with(pane_id="pane-boss")
+    monitor.register_new_rollout.assert_any_call(pane_id="pane-main", baseline={})
+    monitor.register_new_rollout.assert_any_call(pane_id="pane-boss", baseline={Path("/rollout-main"): 1.0})
     main_instruction = tmux.send_instruction_to_pane.call_args.kwargs["instruction"]
     assert "/done" in main_instruction
     assert tmux.send_instruction_to_pane.call_args.kwargs["pane_id"] == "pane-main"
@@ -118,6 +124,7 @@ def test_orchestrator_runs_happy_path(dependencies):
         workers=["pane-worker-1", "pane-worker-2", "pane-worker-3"],
         base_session_id="session-main",
     )
+    monitor.register_worker_rollouts.assert_called_once()
     tmux.resume_workers.assert_called_once()
     tmux.send_instruction_to_workers.assert_called_once_with(
         dependencies["fork_map"], main_instruction
