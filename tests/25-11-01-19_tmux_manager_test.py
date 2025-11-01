@@ -108,17 +108,13 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     main_pane = monkeypatch_server.sessions[0].windows[0].panes[0]
     assert "codex --cd /repo" in main_pane.sent[0][0]
     assert ("send-keys", "-t", layout["main"], "-l", "echo main") in main_pane.cmd_calls
-    assert ("send-keys", "-t", layout["main"], "S-Enter") in main_pane.cmd_calls
-    main_enters = [call for call in main_pane.cmd_calls if call == ("send-keys", "-t", layout["main"], "Enter")]
-    assert len(main_enters) >= 1
+    assert ("send-keys", "-t", layout["main"], "C-m") in main_pane.cmd_calls
     assert ("send-keys", "-t", layout["main"], "Escape") in main_pane.cmd_calls
     worker_pane = monkeypatch_server.sessions[0].windows[0].panes[2]
     assert ("send-keys", "-t", layout["workers"][0], "Escape") in worker_pane.cmd_calls
     assert any("codex resume session-worker-1" in cmd for cmd, _ in worker_pane.sent)
     assert ("send-keys", "-t", layout["workers"][0], "-l", "echo worker") in worker_pane.cmd_calls
-    assert ("send-keys", "-t", layout["workers"][0], "S-Enter") in worker_pane.cmd_calls
-    worker_enters = [call for call in worker_pane.cmd_calls if call == ("send-keys", "-t", layout["workers"][0], "Enter")]
-    assert len(worker_enters) >= 1
+    assert ("send-keys", "-t", layout["workers"][0], "C-m") in worker_pane.cmd_calls
     assert main_pane.sent[-1] == ("codex resume session-worker-1", True)
 
 
