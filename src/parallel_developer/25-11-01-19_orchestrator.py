@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Sequence
@@ -71,10 +72,15 @@ class Orchestrator:
 
         worker_names = [f"worker-{idx + 1}" for idx in range(len(worker_panes))]
         pane_to_worker_name = dict(zip(worker_panes, worker_names))
-        pane_to_worker_path = {
-            pane_id: worker_roots.get(pane_to_worker_name[pane_id], self._worktree.root)
-            for pane_id in worker_panes
-        }
+        pane_to_worker_path: Dict[str, Path] = {}
+        for pane_id, worker_name in pane_to_worker_name.items():
+            if worker_name not in worker_roots:
+                raise RuntimeError(
+                    f"Worktree for {worker_name} not prepared; aborting fork sequence."
+                )
+            pane_to_worker_path[pane_id] = worker_roots[worker_name]
+
+        self._tmux.set_boss_path(boss_path)
 
         self._tmux.launch_main_session(pane_id=main_pane)
         main_session_id = self._monitor.register_new_rollout(pane_id=main_pane, baseline=baseline)
@@ -97,21 +103,35 @@ class Orchestrator:
         )
 
         baseline = self._monitor.snapshot_rollouts()
+        worker_paths = {pane_id: pane_to_worker_path[pane_id] for pane_id in worker_panes}
         worker_pane_list = self._tmux.fork_workers(
             workers=worker_panes,
             base_session_id=main_session_id,
+            pane_paths=worker_paths,
         )
+        if os.getenv("PARALLEL_DEV_PAUSE_AFTER_RESUME") == "1":
+            input(
+                "[parallel-dev] Debug pause after worker resume. "
+                "Inspect tmux panes and press Enter to continue..."
+            )
         fork_map = self._monitor.register_worker_rollouts(
             worker_panes=worker_pane_list,
             baseline=baseline,
         )
 
-        resume_paths = {
-            pane_id: pane_to_worker_path.get(pane_id, self._worktree.root)
-            for pane_id in worker_pane_list
-        }
-        self._tmux.resume_workers(fork_map, resume_paths)
-        self._tmux.send_instruction_to_workers(fork_map, formatted_instruction)
+        self._tmux.confirm_workers(fork_map)
+
+        baseline = self._monitor.snapshot_rollouts()
+        self._tmux.fork_boss(
+            pane_id=boss_pane,
+            base_session_id=main_session_id,
+            boss_path=boss_path,
+        )
+        boss_session_id = self._monitor.register_new_rollout(
+            pane_id=boss_pane,
+            baseline=baseline,
+        )
+        self._tmux.confirm_boss(pane_id=boss_pane)
 
         completion_info = self._monitor.await_completion(
             session_ids=list(fork_map.values())
@@ -121,7 +141,7 @@ class Orchestrator:
         for pane_id, session_id in fork_map.items():
             worker_name = pane_to_worker_name[pane_id]
             branch_name = self._worktree.worker_branch(worker_name)
-            worktree_path = Path(pane_to_worker_path.get(pane_id, self._worktree.root))
+            worktree_path = Path(pane_to_worker_path[pane_id])
             candidates.append(
                 CandidateInfo(
                     key=worker_name,

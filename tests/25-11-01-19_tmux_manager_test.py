@@ -90,34 +90,39 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     initial_map = {layout["workers"][0]: "session-worker-1"}
     manager.send_instruction_to_workers(fork_map=initial_map, instruction="echo worker")
 
-    fork_list = manager.fork_workers(workers=layout["workers"], base_session_id="session-main")
-    assert fork_list == ["%2", "%3"]
-
     worker_paths = {
         layout["workers"][0]: Path("/repo/.parallel-dev/worktrees/worker-1"),
         layout["workers"][1]: Path("/repo/.parallel-dev/worktrees/worker-2"),
     }
+
+    fork_list = manager.fork_workers(
+        workers=layout["workers"],
+        base_session_id="session-main",
+        pane_paths=worker_paths,
+    )
+    assert fork_list == ["%2", "%3"]
+
     fork_map = {
         layout["workers"][0]: "session-worker-1",
         layout["workers"][1]: "session-worker-2",
     }
-    manager.resume_workers(fork_map, worker_paths)
-    manager.send_instruction_to_workers(fork_map, "echo worker")
+    manager.confirm_workers(fork_map)
+    manager.confirm_boss(pane_id=layout["boss"])
     manager.promote_to_main(session_id="session-worker-1", pane_id=layout["main"])
 
     main_pane = monkeypatch_server.sessions[0].windows[0].panes[0]
-    assert "codex --cd /repo" in main_pane.sent[0][0]
-    assert ("send-keys", "-t", layout["main"], "C-c") in main_pane.cmd_calls
-    assert ("send-keys", "-t", layout["main"], "echo main") in main_pane.cmd_calls
-    assert ("send-keys", "-t", layout["main"], "C-m") in main_pane.cmd_calls
+    assert any("cd /repo && codex" in entry[0] for entry in main_pane.sent)
+    assert any("echo main" in entry[0] for entry in main_pane.sent)
     assert ("send-keys", "-t", layout["main"], "Escape") in main_pane.cmd_calls
     worker_pane = monkeypatch_server.sessions[0].windows[0].panes[2]
-    assert ("send-keys", "-t", layout["workers"][0], "Escape") in worker_pane.cmd_calls
-    assert any("codex resume session-worker-1" in cmd for cmd, _ in worker_pane.sent)
-    assert ("send-keys", "-t", layout["workers"][0], "C-c") in worker_pane.cmd_calls
-    assert ("send-keys", "-t", layout["workers"][0], "echo worker") in worker_pane.cmd_calls
-    assert ("send-keys", "-t", layout["workers"][0], "C-m") in worker_pane.cmd_calls
+    assert any(entry[0].startswith("cd /repo/.parallel-dev/worktrees/worker-1 && codex resume") for entry in worker_pane.sent)
+    assert worker_pane.sent.count(("C-[", False)) >= 2
+    assert ("", True) in worker_pane.sent
+    assert worker_pane.sent.count(("", True)) >= 1
     assert main_pane.sent[-1] == ("codex resume session-worker-1", True)
+
+    boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]
+    assert ("", True) in boss_pane.sent
 
 
 def test_tmux_layout_manager_recreates_existing_session(monkeypatch_server):

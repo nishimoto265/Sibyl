@@ -1,11 +1,53 @@
-- date: "2025-11-01"
-  time_utc: "09:56:00"
-  summary: "要件定義をもとにCLI・オーケストレーターをTTDで完成させた"
+- date: '2025-11-01'
+  time_utc: 09:56:00
+  summary: 要件定義をもとにCLI・オーケストレーターをTTDで完成させた
   details:
-    - "uv環境とpyprojectを整備し、pytestを導入"
-    - "OrchestratorとCLIのテストを先行作成し、tmux制御・完了検知・Boss統合まで実装"
-    - "サービス層（WorktreeManager, CodexMonitor, LogManager, BossManager, TmuxLayoutManager）をテスト駆動で構築"
+  - uv環境とpyprojectを整備し、pytestを導入
+  - OrchestratorとCLIのテストを先行作成し、tmux制御・完了検知・Boss統合まで実装
+  - サービス層（WorktreeManager, CodexMonitor, LogManager, BossManager, TmuxLayoutManager）をテスト駆動で構築
   reproduce:
-    - "uv run pytest"
-  result: "tests 10 passed"
-  notes: "実TMUX制御はlibtmuxスタブで検証、実環境でのキー送出確認が今後の確認事項"
+  - uv run pytest
+  result: tests 10 passed
+  notes: 実TMUX制御はlibtmuxスタブで検証、実環境でのキー送出確認が今後の確認事項
+- date: '2025-11-01'
+  time_utc: '19:20:00'
+  summary: ワーカーペイン起動が停止していた問題を修正
+  details:
+  - TmuxLayoutManager.fork_workersを更新し、各ワーカーペインで直接`codex --cd <worktree>`を起動するよう変更
+  - Orchestratorのフォーク処理から未実装のresumeステップを除去し、ワークツリー割当のフォールバックを排除
+  - TTDでtmux/オーケストレータテストを更新し、期待するコマンドとパス検証を追加
+  reproduce:
+  - uv run pytest
+  result: tests 15 passed
+  notes: 暫定対応（20:45エントリで要件どおりのフォーク処理へ差し替え）。
+- date: '2025-11-01'
+  time_utc: '20:45:00'
+  summary: 要件定義どおりメインセッションからフォークする挙動へ再修正
+  details:
+  - TmuxLayoutManager.fork_workersで`codex resume <main_session_id>`実行後に`Esc`×2→`Enter`を送出する処理へ変更
+  - Orchestratorで全ワーカーにワークツリーを必須割当とし、既存のresumeワークフローに合わせたエラーハンドリングを追加
+  - tmux/orchestratorテストを更新し、resumeコマンド・キー入力の送信を検証
+  - 起動待機のばらつきに備えてstartup_delayとキー入力間隔を導入
+  - デバッグ用途で`PARALLEL_DEV_PAUSE_AFTER_RESUME=1`時にワーカーレジューム直後で停止するフックを追加
+  - フォーク後は指示文を再送せずEnterのみ送るよう変更し、worker側の重複入力を解消
+  - CodexMonitorでレジューム直後の既存`/done`を無視し、新規追記分のみ検出するようoffset管理を追加
+  - tmux起動コマンドを`cd <path> && codex`に簡素化し、`--cd`重複指定を解消
+  - Boss用ワークツリーをtmuxへ渡し、workersと同様に`codex resume`→フォークまで自動化
+  - BossManagerによる自動採点を廃止し、CLI上で手動選択（selector）を必須化
+  - スコアボードは完了情報主体にし、選択結果のみスコアへ反映
+  reproduce:
+  - uv run pytest
+  result: tests 15 passed
+  notes: ロールアウトID検出と指示送信（pane基準）の責務を整理し、要件の並列起動フローと一致。
+- date: '2025-11-02'
+  time_utc: '00:57:00'
+  summary: HELLOスクリプトをTTDで追加
+  details:
+  - 失敗するpytestを先に作成し、HELLO標準出力とログ生成を検証
+  - ロガーを設定する`src/parallel_developer/25-11-02-09_hello.py`を実装し、詳細なDEBUGログを記録
+  - 実装後にpytest全体を実行し、既存テストとの整合を確認
+  reproduce:
+  - uv run pytest tests/25-11-02-09_hello_script_test.py
+  - uv run pytest
+  result: tests 15 passed
+  notes: 既存の25-11-01-19_.venv環境を再利用し、ログはlogs/25-11-02-09_hello.logへ出力。

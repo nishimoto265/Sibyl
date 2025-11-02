@@ -27,6 +27,7 @@ class TmuxLayoutManager:
         *,
         root_path: Path,
         startup_delay: float = 0.0,
+        backtrack_delay: float = 0.2,
     ) -> None:
         self.session_name = session_name
         self.worker_count = worker_count
@@ -34,7 +35,11 @@ class TmuxLayoutManager:
         self.root_path = Path(root_path)
         self.boss_path = self.root_path
         self.startup_delay = startup_delay
+        self.backtrack_delay = backtrack_delay
         self._server = libtmux.Server()
+
+    def set_boss_path(self, path: Path) -> None:
+        self.boss_path = Path(path)
 
     def ensure_layout(self, *, session_name: str, worker_count: int) -> Dict[str, Any]:
         if session_name != self.session_name or worker_count != self.worker_count:
@@ -59,7 +64,7 @@ class TmuxLayoutManager:
     def launch_main_session(self, *, pane_id: str) -> None:
         command = (
             f"cd {shlex.quote(str(self.root_path))} && "
-            f"codex --cd {shlex.quote(str(self.root_path))}"
+            "codex"
         )
         self._send_command(pane_id, command)
         self._maybe_wait()
@@ -67,28 +72,60 @@ class TmuxLayoutManager:
     def launch_boss_session(self, *, pane_id: str) -> None:
         command = (
             f"cd {shlex.quote(str(self.boss_path))} && "
-            f"codex --cd {shlex.quote(str(self.boss_path))}"
+            "codex"
         )
         self._send_command(pane_id, command)
         self._maybe_wait()
 
-    def fork_workers(self, *, workers: Iterable[str], base_session_id: str) -> Dict[str, str]:
+    def fork_boss(self, *, pane_id: str, base_session_id: str, boss_path: Path) -> None:
+        command = (
+            f"cd {shlex.quote(str(boss_path))} && "
+            f"codex resume {shlex.quote(str(base_session_id))}"
+        )
+        self._send_command(pane_id, command)
+        self._maybe_wait()
+        pane = self._get_pane(pane_id)
+        pane.send_keys("C-[", enter=False)
+        time.sleep(self.backtrack_delay)
+        pane.send_keys("C-[", enter=False)
+        time.sleep(self.backtrack_delay)
+        pane.send_keys("", enter=True)
+        time.sleep(self.backtrack_delay)
+        self._maybe_wait()
+
+    def fork_workers(
+        self,
+        *,
+        workers: Iterable[str],
+        base_session_id: str,
+        pane_paths: Mapping[str, Path],
+    ) -> List[str]:
+        if not base_session_id:
+            raise RuntimeError("base_session_id が空です。メインセッションのIDが取得できていません。")
         worker_list = list(workers)
         for pane_id in worker_list:
-            pane = self._get_pane(pane_id)
-            for key in ("Escape", "Escape", "Enter"):
-                pane.cmd("send-keys", "-t", pane_id, key)
-        return worker_list
-
-    def resume_workers(self, fork_map: Mapping[str, str], pane_paths: Mapping[str, Path]) -> None:
-        for pane_id, session_id in fork_map.items():
-            worker_path = pane_paths.get(pane_id, self.root_path)
+            try:
+                worker_path = Path(pane_paths[pane_id])
+            except KeyError as exc:
+                raise RuntimeError(
+                    f"pane {pane_id!r} に対応するワークツリーパスがありません"
+                ) from exc
             command = (
                 f"cd {shlex.quote(str(worker_path))} && "
-                f"codex resume {shlex.quote(session_id)}"
+                f"codex resume {shlex.quote(str(base_session_id))}"
             )
             self._send_command(pane_id, command)
         self._maybe_wait()
+        for pane_id in worker_list:
+            pane = self._get_pane(pane_id)
+            pane.send_keys("C-[", enter=False)
+            time.sleep(self.backtrack_delay)
+            pane.send_keys("C-[", enter=False)
+            time.sleep(self.backtrack_delay)
+            pane.send_keys("", enter=True)
+            time.sleep(self.backtrack_delay)
+        self._maybe_wait()
+        return worker_list
 
     def send_instruction_to_pane(self, *, pane_id: str, instruction: str) -> None:
         self._send_text(pane_id, instruction)
@@ -96,6 +133,19 @@ class TmuxLayoutManager:
     def send_instruction_to_workers(self, fork_map: Mapping[str, str], instruction: str) -> None:
         for pane_id in fork_map:
             self._send_text(pane_id, instruction)
+
+    def confirm_workers(self, fork_map: Mapping[str, str]) -> None:
+        for pane_id in fork_map:
+            pane = self._get_pane(pane_id)
+            pane.send_keys("", enter=True)
+            if self.backtrack_delay > 0:
+                time.sleep(self.backtrack_delay)
+
+    def confirm_boss(self, *, pane_id: str) -> None:
+        pane = self._get_pane(pane_id)
+        pane.send_keys("", enter=True)
+        if self.backtrack_delay > 0:
+            time.sleep(self.backtrack_delay)
 
     def promote_to_main(self, *, session_id: str, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
@@ -136,11 +186,8 @@ class TmuxLayoutManager:
 
     def _send_text(self, pane_id: str, text: str) -> None:
         pane = self._get_pane(pane_id)
-        pane.cmd("send-keys", "-t", pane_id, "C-c")
-        time.sleep(0.05)
-        pane.cmd("send-keys", "-t", pane_id, text)
-        time.sleep(0.05)
-        pane.cmd("send-keys", "-t", pane_id, "C-m")
+        payload = text.replace("\r\n", "\n")
+        pane.send_keys(f"\x1b[200~{payload}\x1b[201~", enter=True)
 
 
 class WorktreeManager:
@@ -233,13 +280,20 @@ class CodexMonitor:
         data = self._load_map()
         panes = data.setdefault("panes", {})
         sessions = data.setdefault("sessions", {})
+        offset = 0
+        try:
+            offset = rollout_path.stat().st_size
+        except OSError:
+            offset = 0
         panes[pane_id] = {
             "session_id": session_id,
             "rollout_path": str(rollout_path),
+            "offset": int(offset),
         }
         sessions[session_id] = {
             "pane_id": pane_id,
             "rollout_path": str(rollout_path),
+            "offset": int(offset),
         }
         self._write_map(data)
 
@@ -284,6 +338,10 @@ class CodexMonitor:
             timeout_seconds=timeout_seconds,
         )
         paths = paths[: len(worker_panes)]
+        if len(paths) < len(worker_panes):
+            raise TimeoutError(
+                f"Detected {len(paths)} worker rollouts but {len(worker_panes)} required."
+            )
         fork_map: Dict[str, str] = {}
         for pane_id, path in zip(worker_panes, paths):
             session_id = self._parse_session_meta(path)
@@ -315,11 +373,13 @@ class CodexMonitor:
         sessions = data.get("sessions", {})
 
         targets: Dict[str, Path] = {}
+        offsets: Dict[str, int] = {}
         for session_id in session_ids:
             entry = sessions.get(session_id)
             if entry is None:
                 raise RuntimeError(f"Session {session_id!r} not found in session_map")
             targets[session_id] = Path(entry["rollout_path"])
+            offsets[session_id] = int(entry.get("offset", 0))
 
         remaining = set(targets)
         completion: Dict[str, Any] = {}
@@ -328,8 +388,14 @@ class CodexMonitor:
         while remaining:
             for session_id in list(remaining):
                 rollout_path = targets[session_id]
-                if self._contains_done(rollout_path):
+                done, new_offset = self._contains_done(
+                    session_id=session_id,
+                    rollout_path=rollout_path,
+                    offset=offsets.get(session_id, 0),
+                )
+                if done:
                     completion[session_id] = {"done": True, "rollout_path": str(rollout_path)}
+                    offsets[session_id] = new_offset
                     remaining.remove(session_id)
             if not remaining:
                 break
@@ -338,7 +404,10 @@ class CodexMonitor:
             time.sleep(self.poll_interval)
 
         for session_id in remaining:
-            completion[session_id] = {"done": False, "rollout_path": str(targets[session_id])}
+            completion[session_id] = {
+                "done": False,
+                "rollout_path": str(targets[session_id]),
+            }
 
         return completion
 
@@ -386,17 +455,41 @@ class CodexMonitor:
     def _write_map(self, data: Mapping[str, Any]) -> None:
         self.session_map_path.write_text(yaml.safe_dump(dict(data), sort_keys=True), encoding="utf-8")
 
-    def _contains_done(self, rollout_path: Path) -> bool:
+    def _contains_done(
+        self,
+        *,
+        session_id: str,
+        rollout_path: Path,
+        offset: int,
+    ) -> tuple[bool, int]:
         if not rollout_path.exists():
-            return False
+            return False, offset
         try:
-            with rollout_path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    if "/done" in line:
-                        return True
+            with rollout_path.open("rb") as fh:
+                fh.seek(offset)
+                chunk = fh.read()
+                new_offset = fh.tell()
         except OSError:
-            return False
-        return False
+            return False, offset
+        if not chunk:
+            return False, offset
+        text = chunk.decode("utf-8", errors="ignore")
+        if "/done" in text:
+            self._update_session_offset(session_id, new_offset)
+            return True, new_offset
+        return False, offset
+
+    def _update_session_offset(self, session_id: str, new_offset: int) -> None:
+        data = self._load_map()
+        sessions = data.get("sessions", {})
+        panes = data.get("panes", {})
+        session_entry = sessions.get(session_id)
+        if session_entry is not None:
+            session_entry["offset"] = int(new_offset)
+            pane_id = session_entry.get("pane_id")
+            if pane_id and pane_id in panes:
+                panes[pane_id]["offset"] = int(new_offset)
+            self._write_map(data)
 
 
 class BossManager:
