@@ -256,7 +256,7 @@ def test_attach_manual_mode_ignores_detection(monkeypatch, manifest_store, tmp_p
     controller._attach_manager.attach = Mock(return_value=SimpleNamespace(returncode=0))
     controller._attach_manager.session_exists = Mock(return_value=True)
 
-    _run_async(controller._handle_attach_command(force=False))
+    _run_async(controller._handle_attach_command(force=True))
 
     controller._attach_manager.attach.assert_called_once()
     assert any("接続しました" in payload.get("text", "") for event, payload in events if event == "log")
@@ -340,7 +340,7 @@ def test_attach_skips_when_session_missing(monkeypatch, manifest_store, tmp_path
     _run_async(controller._handle_attach_command(force=False))
 
     controller._attach_manager.attach.assert_not_called()
-    assert any("見つかりません" in payload.get("text", "") for event, payload in events if event == "log")
+    assert any("まだ存在しません" in payload.get("text", "") for event, payload in events if event == "log")
 
 
 def test_auto_attach_after_instruction(monkeypatch, manifest_store, tmp_path):
@@ -376,9 +376,16 @@ def test_auto_attach_after_instruction(monkeypatch, manifest_store, tmp_path):
     )
     controller._config.logs_root = logs_root
 
-    controller._attach_manager.session_exists = Mock(return_value=True)
+    controller._attach_manager.session_exists = Mock(side_effect=[False, False, True, True, True])
+    expected_panes = controller._config.worker_count + 2
+    controller._attach_manager.pane_count = Mock(side_effect=[1, expected_panes])
     controller._attach_manager.is_attached = Mock(return_value=False)
     controller._attach_manager.attach = Mock(return_value=SimpleNamespace(returncode=0))
+
+    async def fast_sleep(_):
+        return None
+
+    monkeypatch.setattr("parallel_developer.cli.asyncio.sleep", fast_sleep)
 
     _run_async(controller.handle_input("/attach auto"))
     assert controller._attach_mode == "auto"
@@ -386,5 +393,6 @@ def test_auto_attach_after_instruction(monkeypatch, manifest_store, tmp_path):
 
     _run_async(controller.handle_input("Implement feature Y"))
 
+    assert controller._attach_manager.pane_count.call_count >= 1
     assert controller._attach_manager.attach.call_count == 1
     assert any("接続しました" in payload.get("text", "") for event, payload in events if event == "log")

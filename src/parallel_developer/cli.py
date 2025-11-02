@@ -96,6 +96,22 @@ class TmuxAttachManager:
         output = (result.stdout or "").strip().lower()
         return output in {"1", "true"}
 
+    def pane_count(self, session_name: str) -> Optional[int]:
+        try:
+            result = subprocess.run(
+                ["tmux", "list-panes", "-t", session_name],
+                check=False,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+        except FileNotFoundError:
+            return None
+        if result.returncode != 0:
+            return None
+        lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
+        return len(lines) if lines else 0
+
     def session_exists(self, session_name: str) -> bool:
         try:
             result = subprocess.run(
@@ -350,7 +366,8 @@ class CLIController:
                 resume_session_id=resume_session,
             )
 
-        auto_attach_task = self._schedule_auto_attach()
+        expected_panes = self._config.worker_count + 2 if self._config.worker_count >= 0 else 0
+        auto_attach_task = self._schedule_auto_attach(expected_panes=expected_panes)
         try:
             self._emit("log", {"text": f"指示を開始: {instruction}"})
             result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
@@ -392,43 +409,18 @@ class CLIController:
 
     async def _handle_attach_command(self, *, force: bool = False) -> None:
         session_name = self._config.tmux_session
-        wait_for_session = not force and self._attach_mode == "auto"
-        if wait_for_session:
-            self._emit("log", {"text": f"[auto] tmuxセッション {session_name} の起動を待機中..."})
-            session_ready = await self._wait_for_session(session_name)
-            if not session_ready:
-                self._emit(
-                    "log",
-                    {"text": f"[auto] tmuxセッション {session_name} が見つかりませんでした。少し待ってから再度試してください。"},
-                )
-                return
-        else:
-            if not self._attach_manager.session_exists(session_name):
-                self._emit(
-                    "log",
-                    {
-                        "text": (
-                            f"tmuxセッション {session_name} がまだ存在しません。"
-                            " 指示を送信してセッションを初期化した後に再度実行してください。"
-                        )
-                    },
-                )
-                return
-
-        perform_detection = not force and self._attach_mode == "auto"
-        if perform_detection:
-            if self._attach_manager.is_attached(session_name):
-                self._emit(
-                    "log",
-                    {"text": f"[auto] tmuxセッション {session_name} は既に接続済みのため、自動アタッチをスキップしました。"},
-                )
-                return
-        result = self._attach_manager.attach(session_name, workdir=self._worktree_root)
-        if result.returncode == 0:
-            prefix = "[auto] " if perform_detection else ""
-            self._emit("log", {"text": f"{prefix}tmuxセッション {session_name} に接続しました。"})
-        else:
-            self._emit("log", {"text": "tmuxへの接続に失敗しました。tmuxが利用可能か確認してください。"})
+        if not self._attach_manager.session_exists(session_name):
+            self._emit(
+                "log",
+                {
+                    "text": (
+                        f"tmuxセッション {session_name} がまだ存在しません。"
+                        " 指示を送信してセッションを初期化した後に再度実行してください。"
+                    )
+                },
+            )
+            return
+        await self._finalize_attach(session_name, auto=False, force=force)
 
     def _list_sessions(self) -> None:
         references = self._manifest_store.list_sessions()
@@ -607,12 +599,22 @@ class CLIController:
             await asyncio.sleep(delay)
         return False
 
-    def _schedule_auto_attach(self) -> Optional[asyncio.Task[None]]:
+    async def _wait_for_layout(self, session_name: str, expected_panes: int, attempts: int = 20, delay: float = 0.25) -> bool:
+        if expected_panes <= 0:
+            return True
+        for _ in range(attempts):
+            count = self._attach_manager.pane_count(session_name)
+            if count is not None and count >= expected_panes:
+                return True
+            await asyncio.sleep(delay)
+        return False
+
+    def _schedule_auto_attach(self, *, expected_panes: int) -> Optional[asyncio.Task[None]]:
         if self._attach_mode != "auto":
             return None
         loop = asyncio.get_running_loop()
         return loop.create_task(
-            self._handle_attach_command(force=False),
+            self._auto_attach_flow(expected_panes=expected_panes),
             name="parallel-dev-auto-attach",
         )
 
@@ -623,6 +625,35 @@ class CLIController:
             await task
         except Exception:  # pragma: no cover - logging handled inside run
             self._emit("log", {"text": "[auto] tmuxへの接続処理でエラーが発生しました。"})
+
+    async def _auto_attach_flow(self, *, expected_panes: int) -> None:
+        session_name = self._config.tmux_session
+        self._emit("log", {"text": f"[auto] tmuxセッション {session_name} の起動を待機中..."})
+        if not await self._wait_for_session(session_name):
+            self._emit("log", {"text": f"[auto] tmuxセッション {session_name} が見つかりませんでした。少し待ってから再度試してください。"})
+            return
+        if not await self._wait_for_layout(session_name, expected_panes):
+            self._emit(
+                "log",
+                {"text": f"[auto] tmuxセッション {session_name} のレイアウトが揃う前にタイムアウトしました。"},
+            )
+            return
+        await self._finalize_attach(session_name, auto=True, force=False)
+
+    async def _finalize_attach(self, session_name: str, *, auto: bool, force: bool) -> None:
+        if not force and self._attach_manager.is_attached(session_name):
+            message = "[auto] tmuxセッション {name} は既に接続済みのため、自動アタッチをスキップしました."
+            if auto:
+                self._emit("log", {"text": message.format(name=session_name)})
+            else:
+                self._emit("log", {"text": f"tmuxセッション {session_name} は既にアタッチされています。"})
+            return
+        result = self._attach_manager.attach(session_name, workdir=self._worktree_root)
+        if result.returncode == 0:
+            prefix = "[auto] " if auto and not force else ""
+            self._emit("log", {"text": f"{prefix}tmuxセッション {session_name} に接続しました。"})
+        else:
+            self._emit("log", {"text": "tmuxへの接続に失敗しました。tmuxが利用可能か確認してください。"})
 
     def _load_settings(self) -> Dict[str, object]:
         if not self._settings_path.exists():
