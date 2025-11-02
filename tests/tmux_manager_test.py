@@ -153,3 +153,30 @@ def test_tmux_layout_manager_recreates_existing_session(monkeypatch_server):
 
     entries = [args for args in monkeypatch_server.new_session_args if args[0] == "parallel-dev"]
     assert entries[0] == ("parallel-dev", False, True)
+
+
+def test_fork_boss_interrupts_before_resume(monkeypatch_server):
+    monitor = Mock()
+    manager = TmuxLayoutManager(
+        session_name="parallel-dev",
+        worker_count=1,
+        monitor=monitor,
+        root_path=Path("/repo"),
+        startup_delay=0.0,
+        backtrack_delay=0.0,
+    )
+
+    layout = manager.ensure_layout(session_name="parallel-dev", worker_count=1)
+    boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]
+
+    manager.fork_boss(
+        pane_id=layout["boss"],
+        base_session_id="session-main",
+        boss_path=Path("/repo/.parallel-dev/boss"),
+    )
+
+    assert boss_pane.sent[:2] == [("C-c", False), ("C-c", False)]
+    assert any(
+        entry[0].startswith("cd /repo/.parallel-dev/boss && codex resume session-main")
+        for entry in boss_pane.sent
+    )

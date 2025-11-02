@@ -101,6 +101,7 @@ class TmuxLayoutManager:
         self._maybe_wait()
 
     def fork_boss(self, *, pane_id: str, base_session_id: str, boss_path: Path) -> None:
+        self.interrupt_pane(pane_id=pane_id)
         command = (
             f"cd {shlex.quote(str(boss_path))} && "
             f"codex resume {shlex.quote(str(base_session_id))}"
