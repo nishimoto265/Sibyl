@@ -872,7 +872,9 @@ def build_orchestrator(
     timestamp = datetime.utcnow().strftime("%y-%m-%d-%H%M%S")
     base_logs_dir = Path(log_dir) if log_dir else Path("logs") / timestamp
     base_logs_dir.mkdir(parents=True, exist_ok=True)
-    session_map_path = base_logs_dir / "sessions_map.yaml"
+    session_map_root = base_logs_dir.parent if log_dir else base_logs_dir
+    session_map_root.mkdir(parents=True, exist_ok=True)
+    session_map_path = session_map_root / "sessions_map.yaml"
 
     monitor = CodexMonitor(logs_dir=base_logs_dir, session_map_path=session_map_path)
     worktree_root = Path.cwd()

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 from parallel_developer.services import CodexMonitor
 
@@ -31,6 +32,33 @@ def test_monitor_registers_and_logs_instruction(tmp_path: Path):
     instruction_log = tmp_path / "instruction.log"
     log_entries = [json.loads(line) for line in instruction_log.read_text(encoding="utf-8").splitlines()]
     assert log_entries == [{"pane": "pane-main", "instruction": "Build feature"}]
+
+
+def test_monitor_bind_existing_session(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=tmp_path / "codex",
+        poll_interval=0.01,
+    )
+
+    rollout = tmp_path / "sessions" / "rollout-existing.jsonl"
+    rollout.parent.mkdir(parents=True, exist_ok=True)
+    rollout.write_text("test", encoding="utf-8")
+
+    monitor.register_session(
+        pane_id="pane-old",
+        session_id="session-existing",
+        rollout_path=rollout,
+    )
+
+    monitor.bind_existing_session(pane_id="pane-new", session_id="session-existing")
+
+    mapping = yaml.safe_load(session_map.read_text(encoding="utf-8"))
+    assert "pane-old" not in mapping["panes"]
+    assert mapping["panes"]["pane-new"]["session_id"] == "session-existing"
+    assert mapping["sessions"]["session-existing"]["pane_id"] == "pane-new"
 
 
 def test_monitor_waits_for_done(tmp_path: Path):
