@@ -167,3 +167,11 @@ def test_orchestrator_runs_happy_path(dependencies):
     assert result.selected_session == "session-boss"
     assert result.sessions_summary["boss"]["score"] == 80.0
     assert result.sessions_summary["boss"]["selected"] is True
+    assert result.artifact is not None
+    assert result.artifact.main_session_id == "session-main"
+    assert result.artifact.worker_sessions == {
+        "worker-1": "session-worker-1",
+        "worker-2": "session-worker-2",
+        "worker-3": "session-worker-3",
+    }
+    assert result.artifact.boss_session_id == "session-boss"

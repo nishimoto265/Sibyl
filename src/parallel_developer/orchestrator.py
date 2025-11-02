@@ -15,6 +15,7 @@ class OrchestrationResult:
 
     selected_session: str
     sessions_summary: Mapping[str, Any] = field(default_factory=dict)
+    artifact: Optional["CycleArtifact"] = None
 
 
 @dataclass(slots=True)
@@ -43,6 +44,17 @@ class CycleLayout:
     worker_names: List[str]
     pane_to_worker: Dict[str, str]
     pane_to_path: Dict[str, Path]
+
+
+@dataclass(slots=True)
+class CycleArtifact:
+    main_session_id: str
+    worker_sessions: Dict[str, str]
+    boss_session_id: Optional[str]
+    worker_paths: Dict[str, Path]
+    boss_path: Optional[Path]
+    instruction: str
+    tmux_session: str
 
 
 class Orchestrator:
@@ -102,6 +114,54 @@ class Orchestrator:
 
         candidates = self._build_candidates(layout, fork_map, boss_session_id, boss_path)
 
+        worker_sessions = {
+            layout.pane_to_worker[pane_id]: session_id
+            for pane_id, session_id in fork_map.items()
+        }
+        worker_paths = {
+            layout.pane_to_worker[pane_id]: layout.pane_to_path[pane_id]
+            for pane_id in layout.worker_panes
+            if pane_id in fork_map
+        }
+        artifact = CycleArtifact(
+            main_session_id=main_session_id,
+            worker_sessions=worker_sessions,
+            boss_session_id=boss_session_id,
+            worker_paths=worker_paths,
+            boss_path=boss_path if boss_session_id else None,
+            instruction=formatted_instruction,
+            tmux_session=self._session_name,
+        )
+
+        if not candidates:
+            scoreboard = {
+                "main": {
+                    "score": None,
+                    "comment": "",
+                    "session_id": main_session_id,
+                    "branch": None,
+                    "worktree": str(self._worktree.root),
+                    "selected": True,
+                }
+            }
+            result = OrchestrationResult(
+                selected_session=main_session_id,
+                sessions_summary=scoreboard,
+                artifact=artifact,
+            )
+            self._log.record_cycle(
+                instruction=formatted_instruction,
+                layout={
+                    "main": layout.main_pane,
+                    "boss": layout.boss_pane,
+                    "workers": list(layout.worker_panes),
+                },
+                fork_map=fork_map,
+                completion=completion_info,
+                result=result,
+            )
+            return result
+
         decision, scoreboard = self._auto_or_select(
             candidates,
             completion_info,
@@ -115,6 +175,7 @@ class Orchestrator:
         result = OrchestrationResult(
             selected_session=selected_info.session_id,
             sessions_summary=scoreboard,
+            artifact=artifact,
         )
 
         self._log.record_cycle(
@@ -244,7 +305,9 @@ class Orchestrator:
         main_session_id: str,
         user_instruction: str,
         completion_info: Dict[str, Any],
-    ) -> tuple[str, Dict[str, Dict[str, Any]]]:
+    ) -> tuple[Optional[str], Dict[str, Dict[str, Any]]]:
+        if not layout.worker_panes:
+            return None, {}
         baseline = self._monitor.snapshot_rollouts()
         self._tmux.fork_boss(
             pane_id=layout.boss_pane,
@@ -281,7 +344,7 @@ class Orchestrator:
         self,
         layout: CycleLayout,
         fork_map: Mapping[str, str],
-        boss_session_id: str,
+        boss_session_id: Optional[str],
         boss_path: Path,
     ) -> List[CandidateInfo]:
         candidates: List[CandidateInfo] = []
@@ -299,15 +362,16 @@ class Orchestrator:
                 )
             )
 
-        candidates.append(
-            CandidateInfo(
-                key="boss",
-                label=f"boss (session {boss_session_id})",
-                session_id=boss_session_id,
-                branch=self._worktree.boss_branch,
-                worktree=boss_path,
+        if boss_session_id:
+            candidates.append(
+                CandidateInfo(
+                    key="boss",
+                    label=f"boss (session {boss_session_id})",
+                    session_id=boss_session_id,
+                    branch=self._worktree.boss_branch,
+                    worktree=boss_path,
+                )
             )
-        )
         return candidates
 
     def _validate_selection(
@@ -332,8 +396,10 @@ class Orchestrator:
         selected: CandidateInfo,
         main_pane: str,
     ) -> None:
-        self._worktree.merge_into_main(selected.branch)
-        self._tmux.promote_to_main(session_id=selected.session_id, pane_id=main_pane)
+        if selected.branch:
+            self._worktree.merge_into_main(selected.branch)
+        if selected.session_id:
+            self._tmux.promote_to_main(session_id=selected.session_id, pane_id=main_pane)
 
     # --------------------------------------------------------------------- #
     # Existing helper utilities

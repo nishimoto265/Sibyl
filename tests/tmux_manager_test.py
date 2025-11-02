@@ -122,6 +122,8 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
 
     boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]
     assert ("C-c", False) in boss_pane.sent
+    manager.resume_session(pane_id=layout["main"], workdir=Path("/repo"), session_id="session-main")
+    assert any("codex resume session-main" in entry[0] for entry in main_pane.sent)
 
 
 def test_tmux_layout_manager_recreates_existing_session(monkeypatch_server):

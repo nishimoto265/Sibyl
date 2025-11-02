@@ -27,6 +27,7 @@ class TmuxLayoutManager:
         root_path: Path,
         startup_delay: float = 0.0,
         backtrack_delay: float = 0.2,
+        reuse_existing_session: bool = False,
     ) -> None:
         self.session_name = session_name
         self.worker_count = worker_count
@@ -35,16 +36,20 @@ class TmuxLayoutManager:
         self.boss_path = self.root_path
         self.startup_delay = startup_delay
         self.backtrack_delay = backtrack_delay
+        self.reuse_existing_session = reuse_existing_session
         self._server = libtmux.Server()
 
     def set_boss_path(self, path: Path) -> None:
         self.boss_path = Path(path)
 
+    def set_reuse_existing_session(self, reuse: bool) -> None:
+        self.reuse_existing_session = reuse
+
     def ensure_layout(self, *, session_name: str, worker_count: int) -> Dict[str, Any]:
         if session_name != self.session_name or worker_count != self.worker_count:
             raise ValueError("session_name/worker_count mismatch with manager configuration")
 
-        session = self._get_or_create_session(fresh=True)
+        session = self._get_or_create_session(fresh=not self.reuse_existing_session)
         window = getattr(session, "attached_window", None) or session.windows[0]
 
         target_pane_count = self.worker_count + 2  # main + boss + workers
@@ -72,6 +77,14 @@ class TmuxLayoutManager:
         command = (
             f"cd {shlex.quote(str(self.boss_path))} && "
             "codex"
+        )
+        self._send_command(pane_id, command)
+        self._maybe_wait()
+
+    def resume_session(self, *, pane_id: str, workdir: Path, session_id: str) -> None:
+        command = (
+            f"cd {shlex.quote(str(workdir))} && "
+            f"codex resume {shlex.quote(str(session_id))}"
         )
         self._send_command(pane_id, command)
         self._maybe_wait()
