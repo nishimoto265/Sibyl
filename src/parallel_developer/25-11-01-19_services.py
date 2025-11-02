@@ -14,7 +14,6 @@ import git
 import libtmux
 import yaml
 
-from .orchestrator import CandidateInfo, SelectionDecision
 
 class TmuxLayoutManager:
     """Manage tmux session layout for parallel Codex agents."""
@@ -141,9 +140,9 @@ class TmuxLayoutManager:
             if self.backtrack_delay > 0:
                 time.sleep(self.backtrack_delay)
 
-    def confirm_boss(self, *, pane_id: str) -> None:
+    def prepare_for_instruction(self, *, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
-        pane.send_keys("", enter=True)
+        pane.send_keys("C-c", enter=False)
         if self.backtrack_delay > 0:
             time.sleep(self.backtrack_delay)
 
@@ -349,6 +348,51 @@ class CodexMonitor:
             fork_map[pane_id] = session_id
         return fork_map
 
+    def get_last_assistant_message(self, session_id: str) -> Optional[str]:
+        data = self._load_map()
+        sessions = data.get("sessions", {})
+        entry = sessions.get(session_id)
+        if entry is None:
+            return None
+
+        rollout_path = Path(entry.get("rollout_path", ""))
+        if not rollout_path.exists():
+            return None
+
+        last_text: Optional[str] = None
+        try:
+            with rollout_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if obj.get("type") != "response_item":
+                        continue
+
+                    payload = obj.get("payload", {})
+                    if payload.get("role") != "assistant":
+                        continue
+
+                    texts: List[str] = []
+                    for block in payload.get("content", []):
+                        block_type = block.get("type")
+                        if block_type in {"output_text", "text"}:
+                            texts.append(block.get("text", ""))
+                        elif block_type == "output_markdown":
+                            texts.append(block.get("markdown", ""))
+                        elif block_type == "output_json":
+                            data = block.get("json")
+                            if data is not None:
+                                texts.append(json.dumps(data))
+                    if texts:
+                        last_text = "\n".join(part for part in texts if part).strip()
+        except OSError:
+            return None
+
+        return last_text
+
     def capture_instruction(self, *, pane_id: str, instruction: str) -> str:
         data = self._load_map()
         pane_entry = data.get("panes", {}).get(pane_id)
@@ -393,9 +437,11 @@ class CodexMonitor:
                     rollout_path=rollout_path,
                     offset=offsets.get(session_id, 0),
                 )
+                if new_offset != offsets.get(session_id, 0):
+                    offsets[session_id] = new_offset
+                    self._update_session_offset(session_id, new_offset)
                 if done:
                     completion[session_id] = {"done": True, "rollout_path": str(rollout_path)}
-                    offsets[session_id] = new_offset
                     remaining.remove(session_id)
             if not remaining:
                 break
@@ -471,13 +517,51 @@ class CodexMonitor:
                 new_offset = fh.tell()
         except OSError:
             return False, offset
+
         if not chunk:
-            return False, offset
-        text = chunk.decode("utf-8", errors="ignore")
-        if "/done" in text:
-            self._update_session_offset(session_id, new_offset)
-            return True, new_offset
-        return False, offset
+            return False, new_offset
+
+        done_detected = False
+        for line in chunk.decode("utf-8", errors="ignore").splitlines():
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if obj.get("type") != "response_item":
+                continue
+
+            payload = obj.get("payload", {})
+            if payload.get("role") != "assistant":
+                continue
+
+            for block in payload.get("content", []):
+                block_type = block.get("type")
+                if block_type in {"output_text", "text"}:
+                    text = block.get("text", "")
+                    lines = [segment.strip() for segment in text.splitlines() if segment.strip()]
+                    if any(segment == "/done" for segment in lines):
+                        done_detected = True
+                        break
+                    for segment in lines:
+                        try:
+                            maybe_json = json.loads(segment)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(maybe_json, dict) and "scores" in maybe_json:
+                            done_detected = True
+                            break
+                    if done_detected:
+                        break
+                elif block_type == "output_json":
+                    data = block.get("json")
+                    if isinstance(data, dict) and "scores" in data:
+                        done_detected = True
+                        break
+            if done_detected:
+                break
+
+        return done_detected, new_offset
 
     def _update_session_offset(self, session_id: str, new_offset: int) -> None:
         data = self._load_map()
@@ -490,121 +574,6 @@ class CodexMonitor:
             if pane_id and pane_id in panes:
                 panes[pane_id]["offset"] = int(new_offset)
             self._write_map(data)
-
-
-class BossManager:
-    """Score worker sessions and compile scoreboard information."""
-
-    def __init__(self, repo_path: Path) -> None:
-        self._repo = git.Repo(repo_path)
-
-    def finalize_scores(
-        self,
-        candidates: List[CandidateInfo],
-        decision: SelectionDecision,
-        completion: Mapping[str, Any],
-    ) -> Dict[str, Dict[str, Any]]:
-        return self._build_summary(candidates, decision.scores, decision.comments, completion)
-
-    def auto_select(
-        self,
-        candidates: List[CandidateInfo],
-        completion: Mapping[str, Any],
-    ) -> tuple[SelectionDecision, Dict[str, Dict[str, Any]]]:
-        scores: Dict[str, float] = {}
-        comments: Dict[str, str] = {}
-
-        for candidate in candidates:
-            score, comment = self._auto_score_candidate(candidate, completion)
-            scores[candidate.key] = score
-            if comment:
-                comments[candidate.key] = comment
-
-        best_key = max(scores, key=scores.get)
-        summary = self._build_summary(candidates, scores, comments, completion)
-        decision = SelectionDecision(selected_key=best_key, scores=scores, comments=comments)
-        return decision, summary
-
-    # Helpers -----------------------------------------------------------------
-    def _build_summary(
-        self,
-        candidates: List[CandidateInfo],
-        scores: Mapping[str, float],
-        comments: Mapping[str, str],
-        completion: Mapping[str, Any],
-    ) -> Dict[str, Dict[str, Any]]:
-        summary: Dict[str, Dict[str, Any]] = {}
-        for candidate in candidates:
-            session_id = candidate.session_id
-            entry: Dict[str, Any] = {
-                "score": float(scores.get(candidate.key, 0.0)),
-                "comment": comments.get(candidate.key, ""),
-                "session_id": session_id,
-                "branch": candidate.branch,
-                "worktree": str(candidate.worktree),
-            }
-            if session_id and session_id in completion:
-                entry.update(completion[session_id])
-            else:
-                entry.setdefault("done", True)
-            summary[candidate.key] = entry
-        return summary
-
-    def _auto_score_candidate(
-        self,
-        candidate: CandidateInfo,
-        completion: Mapping[str, Any],
-    ) -> tuple[float, str]:
-        session_id = candidate.session_id
-        info = completion.get(session_id or "", {}) if session_id else {}
-        done = bool(info.get("done", True))
-
-        if not done:
-            return 0.0, "未完了"
-
-        stats = self._diff_stats(candidate.branch)
-        score = 60.0
-        comment_parts = []
-
-        files = stats.get("files", 0)
-        insertions = stats.get("insertions", 0)
-        deletions = stats.get("deletions", 0)
-
-        if files > 0:
-            score += min(15.0, files * 3.0)
-            comment_parts.append(f"files={files}")
-        if insertions > 0:
-            score += min(15.0, insertions / 10.0)
-            comment_parts.append(f"+{insertions}")
-        if deletions > 0:
-            score += min(5.0, deletions / 20.0)
-            comment_parts.append(f"-{deletions}")
-        if info.get("errors"):
-            score -= 10.0
-            comment_parts.append("errors detected")
-
-        score = max(0.0, min(100.0, score))
-        comment = ", ".join(comment_parts)
-        return score, comment
-
-    def _diff_stats(self, branch_name: str) -> Dict[str, int]:
-        stats = {"files": 0, "insertions": 0, "deletions": 0}
-        try:
-            numstat = self._repo.git.diff("HEAD", branch_name, "--numstat")
-        except git.GitCommandError:
-            return stats
-
-        for line in numstat.splitlines():
-            parts = line.split()
-            if len(parts) >= 3:
-                insertions, deletions = parts[:2]
-                try:
-                    stats["insertions"] += int(insertions)
-                    stats["deletions"] += int(deletions)
-                    stats["files"] += 1
-                except ValueError:
-                    continue
-        return stats
 
 
 class LogManager:

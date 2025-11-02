@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,7 +42,6 @@ class Orchestrator:
         tmux_manager: Any,
         worktree_manager: Any,
         monitor: Any,
-        boss_manager: Any,
         log_manager: Any,
         worker_count: int,
         session_name: str,
@@ -49,7 +49,6 @@ class Orchestrator:
         self._tmux = tmux_manager
         self._worktree = worktree_manager
         self._monitor = monitor
-        self._boss = boss_manager
         self._log = log_manager
         self._worker_count = worker_count
         self._session_name = session_name
@@ -63,6 +62,7 @@ class Orchestrator:
 
         worker_roots = self._worktree.prepare()
         boss_path = self._worktree.boss_path
+        boss_metrics: Dict[str, Dict[str, Any]] = {}
 
         baseline = self._monitor.snapshot_rollouts()
         layout = self._ensure_layout()
@@ -85,11 +85,8 @@ class Orchestrator:
         self._tmux.launch_main_session(pane_id=main_pane)
         main_session_id = self._monitor.register_new_rollout(pane_id=main_pane, baseline=baseline)
 
-        baseline = self._monitor.snapshot_rollouts()
-        self._tmux.launch_boss_session(pane_id=boss_pane)
-        boss_session_id = self._monitor.register_new_rollout(pane_id=boss_pane, baseline=baseline)
-
-        formatted_instruction = self._ensure_done_directive(instruction)
+        user_instruction = instruction.rstrip()
+        formatted_instruction = self._ensure_done_directive(user_instruction)
 
         self._tmux.send_instruction_to_pane(
             pane_id=main_pane,
@@ -118,7 +115,6 @@ class Orchestrator:
             worker_panes=worker_pane_list,
             baseline=baseline,
         )
-
         self._tmux.confirm_workers(fork_map)
 
         baseline = self._monitor.snapshot_rollouts()
@@ -131,11 +127,32 @@ class Orchestrator:
             pane_id=boss_pane,
             baseline=baseline,
         )
-        self._tmux.confirm_boss(pane_id=boss_pane)
+        self._tmux.prepare_for_instruction(pane_id=boss_pane)
 
         completion_info = self._monitor.await_completion(
             session_ids=list(fork_map.values())
         )
+
+        if os.getenv("PARALLEL_DEV_DEBUG_STATE") == "1":
+            print("[parallel-dev] Worker completion status:", completion_info)
+
+        if os.getenv("PARALLEL_DEV_PAUSE_BEFORE_BOSS") == "1":
+            input(
+                "[parallel-dev] All workers reported completion."
+                " Inspect boss pane, then press Enter to send boss instructions..."
+            )
+
+        boss_instruction = self._build_boss_instruction(worker_names, user_instruction)
+        self._tmux.send_instruction_to_pane(
+            pane_id=boss_pane,
+            instruction=boss_instruction,
+        )
+
+        boss_completion = self._monitor.await_completion(
+            session_ids=[boss_session_id]
+        )
+        completion_info.update(boss_completion)
+        boss_metrics = self._extract_boss_scores(boss_session_id)
 
         candidates: List[CandidateInfo] = []
         for pane_id, session_id in fork_map.items():
@@ -162,7 +179,12 @@ class Orchestrator:
             )
         )
 
-        decision, scoreboard = self._auto_or_select(candidates, completion_info, selector)
+        decision, scoreboard = self._auto_or_select(
+            candidates,
+            completion_info,
+            selector,
+            boss_metrics,
+        )
 
         candidate_keys = {candidate.key for candidate in candidates}
         if decision.selected_key not in candidate_keys:
@@ -230,11 +252,122 @@ class Orchestrator:
         candidates: List[CandidateInfo],
         completion_info: Mapping[str, Any],
         selector: Optional[Callable[[List[CandidateInfo]], SelectionDecision]],
+        metrics: Optional[Mapping[str, Mapping[str, Any]]],
     ) -> tuple[SelectionDecision, Dict[str, Dict[str, Any]]]:
-        if selector is not None:
-            decision = selector(candidates)
-            scoreboard = self._boss.finalize_scores(candidates, decision, completion_info)
-            return decision, scoreboard
+        base_scoreboard = self._build_scoreboard(candidates, completion_info, metrics)
+        if selector is None:
+            raise RuntimeError(
+                "Selection requires a selector; automatic boss scoring is not available."
+            )
 
-        decision, scoreboard = self._boss.auto_select(candidates, completion_info)
+        try:
+            decision = selector(candidates, base_scoreboard)
+        except TypeError:
+            decision = selector(candidates)
+
+        scoreboard = self._apply_selection(base_scoreboard, decision)
         return decision, scoreboard
+
+    def _build_scoreboard(
+        self,
+        candidates: List[CandidateInfo],
+        completion_info: Mapping[str, Any],
+        metrics: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        scoreboard: Dict[str, Dict[str, Any]] = {}
+        for candidate in candidates:
+            entry: Dict[str, Any] = {
+                "score": None,
+                "comment": "",
+                "session_id": candidate.session_id,
+                "branch": candidate.branch,
+                "worktree": str(candidate.worktree),
+            }
+            if candidate.session_id and candidate.session_id in completion_info:
+                entry.update(completion_info[candidate.session_id])
+            if metrics and candidate.key in metrics:
+                metric_entry = metrics[candidate.key]
+                if "score" in metric_entry:
+                    try:
+                        entry["score"] = float(metric_entry["score"])
+                    except (TypeError, ValueError):
+                        entry["score"] = metric_entry.get("score")
+                comment_text = metric_entry.get("comment")
+                if comment_text:
+                    entry["comment"] = comment_text
+            scoreboard[candidate.key] = entry
+        return scoreboard
+
+    def _apply_selection(
+        self,
+        scoreboard: Dict[str, Dict[str, Any]],
+        decision: SelectionDecision,
+    ) -> Dict[str, Dict[str, Any]]:
+        for key, comment in decision.comments.items():
+            entry = scoreboard.setdefault(key, {})
+            if comment:
+                entry["comment"] = comment
+        for key in scoreboard:
+            entry = scoreboard[key]
+            entry["selected"] = key == decision.selected_key
+        return scoreboard
+
+    def _extract_boss_scores(self, boss_session_id: str) -> Dict[str, Dict[str, Any]]:
+        raw = self._monitor.get_last_assistant_message(boss_session_id)
+        if not raw:
+            return {}
+
+        def _parse_json_from(raw_text: str) -> Optional[Dict[str, Any]]:
+            lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+            for line in lines:
+                if line == "/done":
+                    continue
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+            return None
+
+        data = _parse_json_from(raw)
+        if data is None:
+            return {
+                "boss": {
+                    "score": None,
+                    "comment": f"Failed to parse boss output as JSON: {raw[:80]}...",
+                }
+            }
+
+        scores = data.get("scores")
+        if not isinstance(scores, dict):
+            return {}
+
+        metrics: Dict[str, Dict[str, Any]] = {}
+        for key, value in scores.items():
+            if not isinstance(value, dict):
+                continue
+            metrics[key] = {
+                "score": value.get("score"),
+                "comment": value.get("comment", ""),
+            }
+        return metrics
+
+    def _build_boss_instruction(
+        self,
+        worker_names: Sequence[str],
+        user_instruction: str,
+    ) -> str:
+        worker_lines = "\n".join(
+            f"- Evaluate the proposal from {name}" for name in worker_names
+        )
+        return (
+            "Boss evaluation phase:\n"
+            "You are the reviewer. The original user instruction was:\n"
+            f"""{user_instruction}\n\n"""
+            "Tasks:\n"
+            f"{worker_lines}\n\n"
+            "For each candidate, assign a numeric score between 0 and 100 and provide a short comment.\n"
+            "Respond with JSON using the schema:\n"
+            "{\n  \"scores\": {\n    \"worker-1\": {\"score\": <number>, \"comment\": <string>},\n"
+            "    ... other candidates ...\n  }\n}\n"
+            "Only output the JSON object. After that, send /done."
+        )

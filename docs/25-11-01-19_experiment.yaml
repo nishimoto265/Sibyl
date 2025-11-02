@@ -1,23 +1,54 @@
-- date: "2025-11-01"
-  time_utc: "09:56:00"
-  summary: "要件定義をもとにCLI・オーケストレーターをTTDで完成させた"
+- date: '2025-11-01'
+  time_utc: 09:56:00
+  summary: 要件定義をもとにCLI・オーケストレーターをTTDで完成させた
   details:
-    - "uv環境とpyprojectを整備し、pytestを導入"
-    - "OrchestratorとCLIのテストを先行作成し、tmux制御・完了検知・Boss統合まで実装"
-    - "サービス層（WorktreeManager, CodexMonitor, LogManager, BossManager, TmuxLayoutManager）をテスト駆動で構築"
+  - uv環境とpyprojectを整備し、pytestを導入
+  - OrchestratorとCLIのテストを先行作成し、tmux制御・完了検知・Boss統合まで実装
+  - サービス層（WorktreeManager, CodexMonitor, LogManager, TmuxLayoutManager）をテスト駆動で構築
   reproduce:
-    - "uv run pytest"
-  result: "tests 10 passed"
-  notes: "実TMUX制御はlibtmuxスタブで検証、実環境でのキー送出確認が今後の確認事項"
-- date: "2025-11-01"
-  time_utc: "11:30:00"
-  summary: "Boss採点・スコアボード・ユーザー選択・mainマージまで実装"
+  - uv run pytest
+  result: tests 10 passed
+  notes: 実TMUX制御はlibtmuxスタブで検証、実環境でのキー送出確認が今後の確認事項
+- date: '2025-11-01'
+  time_utc: '11:30:00'
+  summary: Boss採点・スコアボード・ユーザー選択・mainマージまで実装
   details:
-    - "WorktreeManagerにboss用ワークツリーとfast-forwardマージ機能を追加"
-    - "CodexMonitorでmanual session登録をサポートし、bossセッション投入を自動化"
-    - "Orchestratorで自動スコアリング＆採用決定フローを実装し、CLIは結果表示のみ"
-    - "BossManagerでgit差分を用いた自動評価を行い、LogManagerで結果を記録"
+  - WorktreeManagerにboss用ワークツリーとfast-forwardマージ機能を追加
+  - CodexMonitorでmanual session登録をサポートし、bossセッション投入を自動化
+  - Orchestratorで自動スコアリング＆採用決定フローを実装し、CLIは結果表示のみ
   reproduce:
-    - "uv run pytest"
-  result: "tests 12 passed"
-  notes: "実環境ではBossワークツリーで改良した成果をmainへマージ後、codex resumeにより継続可能"
+  - uv run pytest
+  result: tests 12 passed
+  notes: 実環境ではBossワークツリーで改良した成果をmainへマージ後、codex resumeにより継続可能
+- date: '2025-11-01'
+  time_utc: '19:20:00'
+  summary: ワーカーペイン起動が停止していた問題を修正
+  details:
+  - TmuxLayoutManager.fork_workersを更新し、各ワーカーペインで直接`codex --cd <worktree>`を起動するよう変更
+  - Orchestratorのフォーク処理から未実装のresumeステップを除去し、ワークツリー割当のフォールバックを排除
+  - TTDでtmux/オーケストレータテストを更新し、期待するコマンドとパス検証を追加
+  reproduce:
+  - uv run pytest
+  result: tests 15 passed
+  notes: 暫定対応（20:45エントリで要件どおりのフォーク処理へ差し替え）。
+- date: '2025-11-01'
+  time_utc: '20:45:00'
+  summary: 要件定義どおりメインセッションからフォークする挙動へ再修正
+  details:
+  - TmuxLayoutManager.fork_workersで`codex resume <main_session_id>`実行後に`Esc`×2→`Enter`を送出する処理へ変更
+  - Orchestratorで全ワーカーにワークツリーを必須割当とし、既存のresumeワークフローに合わせたエラーハンドリングを追加
+  - tmux/orchestratorテストを更新し、resumeコマンド・キー入力の送信を検証
+  - 起動待機のばらつきに備えてstartup_delayとキー入力間隔を導入
+  - デバッグ用途で`PARALLEL_DEV_PAUSE_AFTER_RESUME=1`時にワーカーレジューム直後で停止するフックを追加
+  - フォーク後は指示文を再送せずEnterのみ送るよう変更し、worker側の重複入力を解消
+  - CodexMonitorでレジューム直後の既存`/done`を無視し、新規追記分のみ検出するようoffset管理を追加
+  - tmux起動コマンドを`cd <path> && codex`に簡素化し、`--cd`重複指定を解消
+  - Boss用ワークツリーをtmuxへ渡し、workersと同様に`codex resume`→フォークまで自動化
+  - BossManagerによる自動採点を廃止し、CLI上で手動選択（selector）を必須化
+  - スコアボードは完了情報主体にし、選択結果のみスコアへ反映
+  - Bossが出力したJSON評価をロールアウトから抽出し、スコア・コメントとして表示/ログ化
+  - `PARALLEL_DEV_DEBUG_STATE` / `PARALLEL_DEV_PAUSE_BEFORE_BOSS` で完了検知と送信タイミングをデバッグ可能に
+  reproduce:
+  - uv run pytest
+  result: tests 15 passed
+  notes: 各ワーカーロールアウトIDはCodexMonitorが取得し、指示送信はtmux pane_idを用いるフローで整合

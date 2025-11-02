@@ -4,7 +4,7 @@
   details:
   - uv環境とpyprojectを整備し、pytestを導入
   - OrchestratorとCLIのテストを先行作成し、tmux制御・完了検知・Boss統合まで実装
-  - サービス層（WorktreeManager, CodexMonitor, LogManager, BossManager, TmuxLayoutManager）をテスト駆動で構築
+  - サービス層（WorktreeManager, CodexMonitor, LogManager, TmuxLayoutManager）をテスト駆動で構築
   reproduce:
   - uv run pytest
   result: tests 10 passed

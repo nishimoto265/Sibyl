@@ -54,8 +54,26 @@ def test_monitor_waits_for_done(tmp_path: Path):
     assert completion["session-a"]["done"] is False
     assert completion["session-b"]["done"] is False
 
-    rollout_a.write_text('{"item": "note"}\n{"content": "/done"}\n', encoding="utf-8")
-    rollout_b.write_text('{"item": "task"}\n{"content": "/done"}\n', encoding="utf-8")
+    done_payload_text = {
+        "type": "response_item",
+        "payload": {
+            "role": "assistant",
+            "content": [
+                {"type": "output_text", "text": '{"scores":{}}\n/done'},
+            ],
+        },
+    }
+    done_payload_json = {
+        "type": "response_item",
+        "payload": {
+            "role": "assistant",
+            "content": [
+                {"type": "output_json", "json": {"scores": {"worker-1": {"score": 100}}}},
+            ],
+        },
+    }
+    rollout_a.write_text(json.dumps(done_payload_text) + "\n", encoding="utf-8")
+    rollout_b.write_text(json.dumps(done_payload_json) + "\n", encoding="utf-8")
 
     completion = monitor.await_completion(session_ids=["session-a", "session-b"], timeout_seconds=0.1)
     assert completion["session-a"]["done"] is True
@@ -123,3 +141,22 @@ def test_monitor_detects_new_sessions(tmp_path: Path):
     )
 
     assert mapping == {"pane-worker-2": "session-worker-2"}
+
+
+def test_monitor_worker_rollouts_timeout(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    codex_root = tmp_path / "codex"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+    )
+
+    baseline = monitor.snapshot_rollouts()
+    with pytest.raises(TimeoutError):
+        monitor.register_worker_rollouts(
+            worker_panes=["pane-1", "pane-2"],
+            baseline=baseline,
+            timeout_seconds=0.05,
+        )

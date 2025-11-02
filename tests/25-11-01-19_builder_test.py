@@ -16,13 +16,12 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
     tmux = Mock(name="TmuxManager")
     worktree = Mock(name="WorktreeManager")
     monitor = Mock(name="CodexMonitor")
-    boss = Mock(name="BossManager")
     log_manager = Mock(name="LogManager")
     orchestrator_instance = Mock(name="OrchestratorInstance")
 
     monkeypatch.setattr(
         "parallel_developer.cli.TmuxLayoutManager",
-        lambda session_name, worker_count, monitor, root_path, startup_delay=0.0: tmux,
+        lambda session_name, worker_count, monitor, root_path, **_: tmux,
     )
     monkeypatch.setattr(
         "parallel_developer.cli.WorktreeManager", lambda **_: worktree
@@ -31,7 +30,6 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
         "parallel_developer.cli.CodexMonitor",
         lambda logs_dir, session_map_path, poll_interval=1.0: monitor,
     )
-    monkeypatch.setattr("parallel_developer.cli.BossManager", lambda repo_path: boss)
     monkeypatch.setattr("parallel_developer.cli.LogManager", lambda **_: log_manager)
     monkeypatch.setattr(
         "parallel_developer.cli.Orchestrator",

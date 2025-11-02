@@ -107,7 +107,7 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
         layout["workers"][1]: "session-worker-2",
     }
     manager.confirm_workers(fork_map)
-    manager.confirm_boss(pane_id=layout["boss"])
+    manager.prepare_for_instruction(pane_id=layout["boss"])
     manager.promote_to_main(session_id="session-worker-1", pane_id=layout["main"])
 
     main_pane = monkeypatch_server.sessions[0].windows[0].panes[0]
@@ -117,12 +117,11 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     worker_pane = monkeypatch_server.sessions[0].windows[0].panes[2]
     assert any(entry[0].startswith("cd /repo/.parallel-dev/worktrees/worker-1 && codex resume") for entry in worker_pane.sent)
     assert worker_pane.sent.count(("C-[", False)) >= 2
-    assert ("", True) in worker_pane.sent
     assert worker_pane.sent.count(("", True)) >= 1
     assert main_pane.sent[-1] == ("codex resume session-worker-1", True)
 
     boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]
-    assert ("", True) in boss_pane.sent
+    assert ("C-c", False) in boss_pane.sent
 
 
 def test_tmux_layout_manager_recreates_existing_session(monkeypatch_server):
