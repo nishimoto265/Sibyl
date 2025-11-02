@@ -609,7 +609,8 @@ class ParallelDeveloperApp(App):
                 self.selection_list.clear_options()
                 for idx, candidate_label in enumerate(candidates, start=1):
                     option_text = self._build_option_label(candidate_label, scoreboard)
-                    self.selection_list.add_option(option_text, str(idx))
+                    option = OptionList.Option(option_text, str(idx))
+                    self.selection_list.add_option(option)
                 self.selection_list.display = True
                 self.selection_list.focus()
             if self.command_input:
