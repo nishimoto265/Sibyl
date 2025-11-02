@@ -123,3 +123,14 @@
   - uv run pytest
   result: tests 20 passed
   notes: 実tmux環境でのosascript挙動は引き続き実機での確認が必要
+- date: '2025-11-02'
+  time_utc: '21:50:00'
+  summary: CommandPalette初期化でTextual例外を防止
+  details:
+  - CommandPaletteの__init__とset_itemsでupdate()を即時呼び出し、初回描画がNoneになる問題を解消
+  - _render内の改行挿入ロジックのインデント崩れを修正し、pytestで検出されたIndentationErrorを解決
+  - CLI回りのテスト群を実行し、コマンドパレットのハイライト更新が意図通り動作することを確認
+  reproduce:
+  - uv run pytest
+  result: tests 32 passed
+  notes: 実行時にAttributeError: 'NoneType' object has no attribute 'get_height'が再発しないことを手動確認

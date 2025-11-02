@@ -204,6 +204,7 @@ class CommandPalette(Static):
         self._items: List[PaletteItem] = []
         self._active_index: int = 0
         self._renderable: Text = Text()
+        self.update(self._renderable)
 
     def set_items(self, items: List[PaletteItem]) -> None:
         self._items = items
@@ -211,6 +212,7 @@ class CommandPalette(Static):
         if not items:
             self.display = False
             self._renderable = Text()
+            self.update(self._renderable)
             return
         self.display = True
         self._render()
@@ -218,6 +220,7 @@ class CommandPalette(Static):
     def _render(self) -> None:
         if not self._items:
             self._renderable = Text()
+            self.update(self._renderable)
             return
         lines: List[Text] = []
         for idx, item in enumerate(self._items):
@@ -230,6 +233,7 @@ class CommandPalette(Static):
                 combined.append("\n")
             combined.append(segment)
         self._renderable = combined
+        self.update(self._renderable)
 
     def move_next(self) -> None:
         if not self._items:
