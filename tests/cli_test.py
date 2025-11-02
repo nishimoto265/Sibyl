@@ -7,6 +7,7 @@ import pytest
 from parallel_developer.cli import CLIController, SessionMode
 from parallel_developer.orchestrator import CycleArtifact, OrchestrationResult
 from parallel_developer.session_manifest import ManifestStore
+from types import SimpleNamespace
 
 
 @pytest.fixture
@@ -115,3 +116,25 @@ def test_handle_instruction_runs_builder_and_saves_manifest(manifest_store, tmp_
     conversation_path = Path(manifest.conversation_log)
     assert conversation_path.exists()
     assert controller._last_selected_session == "session-main"
+
+
+def test_attach_command_invokes_tmux(monkeypatch, manifest_store, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(
+        event_handler=handler,
+        orchestrator_builder=lambda **_: Mock(),
+        manifest_store=manifest_store,
+        worktree_root=tmp_path,
+    )
+
+    mock_attach = Mock(return_value=SimpleNamespace(returncode=0))
+    controller._attach_manager = Mock(attach=mock_attach)
+
+    _run_async(controller.handle_input("/attach"))
+
+    mock_attach.assert_called_once()
+    assert any("tmuxセッション" in payload.get("text", "") for event, payload in events if event == "log")

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
+import subprocess
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
@@ -25,6 +27,28 @@ from .services import CodexMonitor, LogManager, TmuxLayoutManager, WorktreeManag
 class SessionMode(str, Enum):
     PARALLEL = "parallel"
     MAIN = "main"
+
+
+class TmuxAttachManager:
+    """Simple helper to open a tmux popup for the current session."""
+
+    def attach(self, session_name: str, pane_id: str = "%0", workdir: Optional[Path] = None) -> subprocess.CompletedProcess:
+        command = [
+            "tmux",
+            "display-popup",
+            "-E",
+            "tmux",
+            "capture-pane",
+            "-pt",
+            f"{session_name}:{pane_id}",
+        ]
+        env = None
+        if workdir:
+            env = {"PWD": str(workdir), **os.environ}
+        try:
+            return subprocess.run(command, check=False, env=env)
+        except FileNotFoundError:
+            return subprocess.CompletedProcess(command, returncode=127)
 
 
 @dataclass
@@ -105,6 +129,7 @@ class CLIController:
         self._selection_context: Optional[SelectionContext] = None
         self._resume_options: List[SessionReference] = []
         self._last_selected_session: Optional[str] = None
+        self._attach_manager = TmuxAttachManager()
 
     async def handle_input(self, user_input: str) -> None:
         text = user_input.strip()
@@ -160,6 +185,10 @@ class CLIController:
                 return
             self._config.mode = SessionMode(parts[1].lower())
             self._emit_status("設定を更新しました。")
+            return
+
+        if name == "/attach":
+            await self._handle_attach_command()
             return
 
         if name == "/scoreboard":
@@ -273,6 +302,14 @@ class CLIController:
         self._emit("log", {"text": f"{candidate.label} を選択しました。"})
         self._selection_context = None
         self._emit("selection_finished", {})
+
+    async def _handle_attach_command(self) -> None:
+        session_name = self._config.tmux_session
+        result = self._attach_manager.attach(session_name, workdir=self._worktree_root)
+        if result.returncode == 0:
+            self._emit("log", {"text": f"tmuxセッション {session_name} に接続しました。"})
+        else:
+            self._emit("log", {"text": "tmuxへの接続に失敗しました。tmuxが利用可能か確認してください。"})
 
     def _list_sessions(self) -> None:
         references = self._manifest_store.list_sessions()
