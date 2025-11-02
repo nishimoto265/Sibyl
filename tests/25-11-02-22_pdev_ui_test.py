@@ -105,3 +105,33 @@ async def test_event_log_copy_to_clipboard() -> None:
         await pilot.pause()
         assert "alpha" in app.clipboard
         assert "beta" in app.clipboard
+
+
+@pytest.mark.asyncio
+async def test_log_command_copy() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        log_widget = app.query_one("#log", EventLog)
+        log_widget.log("alpha")
+        log_widget.log("beta")
+        await pilot.pause()
+        await app.controller.execute_command("/log", "copy")
+        await pilot.pause()
+        assert "alpha" in app.clipboard
+        assert "beta" in app.clipboard
+
+
+@pytest.mark.asyncio
+async def test_log_command_save(tmp_path) -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        log_widget = app.query_one("#log", EventLog)
+        log_widget.log("alpha")
+        log_widget.log("beta")
+        await pilot.pause()
+        dest = tmp_path / "out.log"
+        await app.controller.execute_command("/log", f"save {dest}")
+        await pilot.pause()
+        assert dest.read_text(encoding="utf-8").strip().splitlines() == ["alpha", "beta"]

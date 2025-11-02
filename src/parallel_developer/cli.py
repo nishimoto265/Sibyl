@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 import platform
 import subprocess
 import shlex
@@ -197,7 +197,7 @@ class EventLog(RichLog):
 class CommandHint(Static):
     def update_hint(self) -> None:
         self.update(
-            "Commands : /attach, /parallel, /mode, /resume, /status, /scoreboard, /help, /exit"
+            "Commands : /attach, /parallel, /mode, /resume, /log, /status, /scoreboard, /help, /exit"
         )
 
 
@@ -308,6 +308,13 @@ class CLIController:
             "/resume": {
                 "description": "保存済みセッションを再開する",
                 "options_provider": self._build_resume_options,
+            },
+            "/log": {
+                "description": "ログをコピーするかファイルへ保存する",
+                "options": [
+                    CommandOption("copy", "copy"),
+                    CommandOption("save", "save"),
+                ],
             },
             "/status": {"description": "現在の状態を表示する"},
             "/scoreboard": {"description": "直近のスコアボードを表示する"},
@@ -440,6 +447,38 @@ class CLIController:
                 self._emit("log", {"text": "指定されたセッションが見つかりません。"})
                 return
             self._load_session(index)
+            return
+
+        if name == "/log":
+            if option is None:
+                self._emit(
+                    "log",
+                    {
+                        "text": "使い方: /log copy | /log save <path>\n"
+                        "  copy : 現在のログをクリップボードへコピー\n"
+                        "  save : 指定パスへログを書き出す"
+                    },
+                )
+                return
+            action: str
+            argument: Optional[str] = None
+            if isinstance(option, str):
+                sub_parts = option.split(maxsplit=1)
+                action = sub_parts[0].lower()
+                if len(sub_parts) > 1:
+                    argument = sub_parts[1].strip()
+            else:
+                action = str(option).lower()
+            if action == "copy":
+                self._emit("log_copy", {})
+                return
+            if action == "save":
+                if not argument:
+                    self._emit("log", {"text": "保存先パスを指定してください。例: /log save logs/output.log"})
+                    return
+                self._emit("log_save", {"path": argument})
+                return
+            self._emit("log", {"text": "使い方: /log copy | /log save <path>"})
             return
 
     def _find_resume_index_by_session(self, token: str) -> Optional[int]:
@@ -1010,6 +1049,16 @@ class ParallelDeveloperApp(App):
             scoreboard = event.payload.get("scoreboard", {})
             if isinstance(scoreboard, dict):
                 self._render_scoreboard(scoreboard)
+        elif event.event_type == "log_copy":
+            message = self._copy_log_to_clipboard()
+            self._notify_status(message)
+        elif event.event_type == "log_save":
+            destination = str(event.payload.get("path", "") or "").strip()
+            if not destination:
+                self._notify_status("保存先パスが指定されていません。")
+            else:
+                message = self._save_log_to_path(destination)
+                self._notify_status(message)
         elif event.event_type == "selection_request":
             candidates = event.payload.get("candidates", [])
             scoreboard = event.payload.get("scoreboard", {})
@@ -1106,6 +1155,48 @@ class ParallelDeveloperApp(App):
         if self.command_palette and self.command_palette.display:
             self.command_palette.move_previous()
 
+    def _collect_log_text(self) -> Tuple[str, bool]:
+        if not self.log_panel:
+            return "", False
+        selection = None
+        with suppress(NoScreen):
+            selection = self.log_panel.text_selection
+        if selection:
+            extracted = self.log_panel.get_selection(selection)
+            if extracted:
+                text, ending = extracted
+                final_text = text if ending is None else f"{text}{ending}"
+                return final_text.rstrip("\n"), True
+        lines = [strip.text.rstrip() for strip in self.log_panel.lines]
+        return "\n".join(lines).rstrip("\n"), False
+
+    def _copy_log_to_clipboard(self) -> str:
+        text, from_selection = self._collect_log_text()
+        if not text:
+            return "コピー対象のログがありません。"
+        self.copy_to_clipboard(text)
+        if from_selection:
+            return "選択範囲をクリップボードへコピーしました。"
+        return "ログ全体をクリップボードへコピーしました。"
+
+    def _save_log_to_path(self, destination: str) -> str:
+        text, _ = self._collect_log_text()
+        if not text:
+            return "保存対象のログがありません。"
+        try:
+            path = Path(destination).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text + "\n", encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            return f"ログの保存に失敗しました: {exc}"
+        return f"ログを {path} に保存しました。"
+
+    def _notify_status(self, message: str, *, also_log: bool = True) -> None:
+        if self.status_panel:
+            self.status_panel.update_status(self.controller._config, message)
+        if also_log and self.log_panel:
+            self.log_panel.log(message)
+
     def on_key(self, event: events.Key) -> None:
         if self._handle_text_shortcuts(event):
             return
@@ -1157,25 +1248,14 @@ class ParallelDeveloperApp(App):
         if matches(shortcuts_select_all):
             if self.log_panel:
                 self.log_panel.text_select_all()
+                self._notify_status("ログ全体を選択しました。", also_log=False)
             event.stop()
             return True
         if matches(shortcuts_copy) and self.log_panel:
-            clipboard_text: Optional[str] = None
-            selection = None
-            with suppress(NoScreen):
-                selection = self.log_panel.text_selection
-            if selection:
-                extracted = self.log_panel.get_selection(selection)
-                if extracted:
-                    text, ending = extracted
-                    clipboard_text = text if ending is None else f"{text}{ending}"
-            if not clipboard_text:
-                clipboard_text = "\n".join(strip.text.rstrip() for strip in self.log_panel.lines)
-            if clipboard_text:
-                self.copy_to_clipboard(clipboard_text)
-                self._post_event("status", {"message": "ログをクリップボードへコピーしました"})
-                event.stop()
-                return True
+            message = self._copy_log_to_clipboard()
+            self._notify_status(message)
+            event.stop()
+            return True
         return False
 
     def on_click(self, event: events.Click) -> None:
