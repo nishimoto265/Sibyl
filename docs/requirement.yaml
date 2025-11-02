@@ -63,7 +63,7 @@ metadata:
       - "CLI画面にスコアボード・採点結果をストリーミング表示し、必要に応じて`/scoreboard`で再表示できるようにする。"
       - "会話ログ（ユーザー指示・エージェント応答）をCLI上にロードし直し、`/resume` 実行直後から続きが見える状態に復元する。"
       - "TextualベースのUIを採用し、イベントログ・状態表示・入力欄を統合する。採点完了後は候補がリスト表示され、上下キーで選択、Enterで決定できる操作を提供する。"
-      - "`/attach` コマンドで tmux セッションへのアタッチを制御する。`/attach auto|manual` で自動アタッチのオン/オフを切り替え、`/attach now [target]` で必要な pane に即座に接続できるようにする。"
+      - "`/attach` コマンドで現在のtmuxセッションへ外部ターミナルから接続できるようにする。macOSではTerminal.appで `tmux attach -t <session>` を実行し、Linuxではgnome-terminal（存在しない場合は`bash -lc`）で同じコマンドを起動する。`/attach auto|manual` で自動アタッチ時の重複検知を切り替え、autoは指示開始直後にセッション生成完了を待機しつつ、未接続なら自動でターミナルを開く。manualは常に新規ターミナルを立ち上げる。autoモード中でも `/attach` 単体を実行した場合は検知を無視して強制的に接続する。選択したモードは `.parallel-dev/settings.json` に保存され、CLI再起動後も継続される。"
 tmuxレイアウト:
   セッション: "1つのtmuxセッションにメインCodex、Boss Codex、worker*Nの計N+2ペインを配置。"
   デフォルトN: 3

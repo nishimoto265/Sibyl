@@ -10,7 +10,11 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
+import platform
 import subprocess
+import shlex
+import shutil
+from subprocess import PIPE
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
@@ -29,24 +33,93 @@ class SessionMode(str, Enum):
 
 
 class TmuxAttachManager:
-    """Simple helper to open a tmux popup for the current session."""
+    """Launch an external terminal to attach to the tmux session."""
 
-    def attach(self, session_name: str, pane_id: str = "%0", workdir: Optional[Path] = None) -> subprocess.CompletedProcess:
-        command = [
-            "tmux",
-            "display-popup",
-            "-t",
-            session_name,
-            "-E",
-            "tmux",
-            "capture-pane",
-            "-pt",
-            f"{session_name}:{pane_id}",
-        ]
+    def attach(self, session_name: str, workdir: Optional[Path] = None) -> subprocess.CompletedProcess:
+        system = platform.system().lower()
+        command_string = self._build_command_string(session_name, workdir)
+
+        if "darwin" in system:
+            escaped_command = self._escape_for_applescript(command_string)
+            apple_script = (
+                'tell application "Terminal"\n'
+                f'    do script "{escaped_command}"\n'
+                "    activate\n"
+                "end tell"
+            )
+            command = ["osascript", "-e", apple_script]
+            try:
+                return subprocess.run(command, check=False)
+            except FileNotFoundError:
+                # Fall through to generic fallback below.
+                pass
+        elif "linux" in system:
+            command = ["gnome-terminal", "--", "bash", "-lc", command_string]
+            try:
+                return subprocess.run(command, check=False)
+            except FileNotFoundError:
+                # gnome-terminal not available; fall back to shell attach.
+                pass
+
+        fallback_command: List[str]
+        if shutil.which("bash"):
+            fallback_command = ["bash", "-lc", command_string]
+        else:
+            fallback_command = ["tmux", "attach", "-t", session_name]
+
         try:
-            return subprocess.run(command, check=False)
+            return subprocess.run(fallback_command, check=False)
         except FileNotFoundError:
-            return subprocess.CompletedProcess(command, returncode=127)
+            return subprocess.CompletedProcess(fallback_command, returncode=127)
+
+    def is_attached(self, session_name: str) -> bool:
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "display-message",
+                    "-t",
+                    session_name,
+                    "-p",
+                    "#{session_attached}",
+                ],
+                check=False,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+        except FileNotFoundError:
+            return False
+
+        if result.returncode != 0:
+            return False
+        output = (result.stdout or "").strip().lower()
+        return output in {"1", "true"}
+
+    def session_exists(self, session_name: str) -> bool:
+        try:
+            result = subprocess.run(
+                [
+                    "tmux",
+                    "has-session",
+                    "-t",
+                    session_name,
+                ],
+                check=False,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+        except FileNotFoundError:
+            return False
+        return result.returncode == 0
+
+    def _build_command_string(self, session_name: str, workdir: Optional[Path]) -> str:
+        return f"tmux attach -t {shlex.quote(session_name)}"
+
+    @staticmethod
+    def _escape_for_applescript(command: str) -> str:
+        return command.replace("\\", "\\\\").replace('"', '\\"')
 
 
 @dataclass
@@ -115,6 +188,7 @@ class CLIController:
         orchestrator_builder: Callable[..., Orchestrator] = None,
         manifest_store: Optional[ManifestStore] = None,
         worktree_root: Optional[Path] = None,
+        settings_path: Optional[Path] = None,
     ) -> None:
         self._event_handler = event_handler
         self._builder = orchestrator_builder or self._default_builder
@@ -128,6 +202,10 @@ class CLIController:
         self._resume_options: List[SessionReference] = []
         self._last_selected_session: Optional[str] = None
         self._attach_manager = TmuxAttachManager()
+        self._settings_path = Path(settings_path) if settings_path else (self._worktree_root / ".parallel-dev" / "settings.json")
+        self._settings_path.parent.mkdir(parents=True, exist_ok=True)
+        self._settings: Dict[str, object] = self._load_settings()
+        self._attach_mode: str = str(self._settings.get("attach_mode", "auto"))
 
     async def handle_input(self, user_input: str) -> None:
         text = user_input.strip()
@@ -186,7 +264,16 @@ class CLIController:
             return
 
         if name == "/attach":
-            await self._handle_attach_command()
+            if len(parts) == 2:
+                mode = parts[1].lower()
+                if mode in {"auto", "manual"}:
+                    self._attach_mode = mode
+                    self._emit("log", {"text": f"/attach モードを {mode} に設定しました。"})
+                    self._save_settings()
+                    return
+                self._emit("log", {"text": "使い方: /attach [auto|manual]"})
+                return
+            await self._handle_attach_command(force=True)
             return
 
         if name == "/scoreboard":
@@ -263,8 +350,11 @@ class CLIController:
                 resume_session_id=resume_session,
             )
 
+        auto_attach_task: Optional[asyncio.Task[None]] = None
         try:
             self._emit("log", {"text": f"指示を開始: {instruction}"})
+            if self._attach_mode == "auto":
+                auto_attach_task = asyncio.create_task(self._handle_attach_command(force=False))
             result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
             self._last_scoreboard = dict(result.sessions_summary)
             self._last_instruction = instruction
@@ -282,6 +372,11 @@ class CLIController:
             self._selection_context = None
             self._running = False
             self._emit_status("待機中")
+            if auto_attach_task:
+                try:
+                    await auto_attach_task
+                except Exception:  # pragma: no cover - logging handled inside
+                    self._emit("log", {"text": "[auto] tmuxへの接続処理でエラーが発生しました。"})
 
     def _resolve_selection(self, index: int) -> None:
         if not self._selection_context:
@@ -301,11 +396,43 @@ class CLIController:
         self._selection_context = None
         self._emit("selection_finished", {})
 
-    async def _handle_attach_command(self) -> None:
+    async def _handle_attach_command(self, *, force: bool = False) -> None:
         session_name = self._config.tmux_session
+        wait_for_session = not force and self._attach_mode == "auto"
+        if wait_for_session:
+            self._emit("log", {"text": f"[auto] tmuxセッション {session_name} の起動を待機中..."})
+            session_ready = await self._wait_for_session(session_name)
+            if not session_ready:
+                self._emit(
+                    "log",
+                    {"text": f"[auto] tmuxセッション {session_name} が見つかりませんでした。少し待ってから再度試してください。"},
+                )
+                return
+        else:
+            if not self._attach_manager.session_exists(session_name):
+                self._emit(
+                    "log",
+                    {
+                        "text": (
+                            f"tmuxセッション {session_name} がまだ存在しません。"
+                            " 指示を送信してセッションを初期化した後に再度実行してください。"
+                        )
+                    },
+                )
+                return
+
+        perform_detection = not force and self._attach_mode == "auto"
+        if perform_detection:
+            if self._attach_manager.is_attached(session_name):
+                self._emit(
+                    "log",
+                    {"text": f"[auto] tmuxセッション {session_name} は既に接続済みのため、自動アタッチをスキップしました。"},
+                )
+                return
         result = self._attach_manager.attach(session_name, workdir=self._worktree_root)
         if result.returncode == 0:
-            self._emit("log", {"text": f"tmuxセッション {session_name} に接続しました。"})
+            prefix = "[auto] " if perform_detection else ""
+            self._emit("log", {"text": f"{prefix}tmuxセッション {session_name} に接続しました。"})
         else:
             self._emit("log", {"text": "tmuxへの接続に失敗しました。tmuxが利用可能か確認してください。"})
 
@@ -478,6 +605,30 @@ class CLIController:
         logs_dir = self._config.logs_root / timestamp
         logs_dir.mkdir(parents=True, exist_ok=True)
         return logs_dir
+
+    async def _wait_for_session(self, session_name: str, attempts: int = 20, delay: float = 0.25) -> bool:
+        for _ in range(attempts):
+            if self._attach_manager.session_exists(session_name):
+                return True
+            await asyncio.sleep(delay)
+        return False
+
+    def _load_settings(self) -> Dict[str, object]:
+        if not self._settings_path.exists():
+            return {}
+        try:
+            return json.loads(self._settings_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_settings(self) -> None:
+        data = dict(self._settings)
+        data["attach_mode"] = self._attach_mode
+        try:
+            self._settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            self._settings = data
+        except OSError:
+            pass
 
     def _build_manifest(self, result: OrchestrationResult, logs_dir: Path) -> SessionManifest:
         assert result.artifact is not None

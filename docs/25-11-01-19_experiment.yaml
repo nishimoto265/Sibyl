@@ -105,3 +105,21 @@
   - uv run pytest
   result: tests 13 passed
   notes: 既存pytestのモック検証も全て通過し、外部APIとのインターフェース互換性を維持
+- date: '2025-11-02'
+  time_utc: '21:20:00'
+  summary: `/attach` コマンドの外部ターミナル起動を安定化
+  details:
+  - macOSのosascript向けに`cd <workdir> && tmux attach -t <session>`をダブルクォートエスケープして実行する処理を追加
+  - Linuxではgnome-terminal経由で同コマンドを起動し、未インストール時は`bash -lc`をフォールバックとして呼び出すように改善
+  - CLIControllerから作業ディレクトリを添えてattachマネージャへ委譲し、macOS/Linux/フォールバックを網羅するテストを新設
+  - `/attach auto|manual` で重複アタッチ検知を切り替えられるようにし、auto時はtmuxの既存クライアントを検出して未接続なら即座に新規アタッチ、manual時は常に新規アタッチする挙動を実装
+  - auto中でも`/attach`単体入力は検知をバイパスして強制接続するよう分岐を追加し、挙動をテストで保証
+  - 選択したattachモードを`.parallel-dev/settings.json`に保存し、次回起動時に復元する設定ファイルを追加
+  - tmuxセッションが存在しない段階ではアタッチを実行せず、「指示送信後に再試行する」旨をログに出す安全策を導入
+  - アタッチ時のコマンドから`cd`を除去し、純粋に `tmux attach -t <session>` のみを実行するよう簡素化
+  - autoモード有効時は指示開始直後に自動アタッチ処理をバックグラウンドで起動し、セッション生成完了を待機してから未接続なら接続するよう調整
+  - `/attach`仕様の更新内容をdocs/requirement.yamlへ反映
+  reproduce:
+  - uv run pytest
+  result: tests 20 passed
+  notes: 実tmux環境でのosascript挙動は引き続き実機での確認が必要
