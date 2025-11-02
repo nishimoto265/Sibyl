@@ -15,6 +15,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static
+from textual.widgets.option_list import Option
 
 from .orchestrator import CandidateInfo, OrchestrationResult, Orchestrator, SelectionDecision
 from .session_manifest import ManifestStore, PaneRecord, SessionManifest, SessionReference
@@ -609,7 +610,7 @@ class ParallelDeveloperApp(App):
                 self.selection_list.clear_options()
                 for idx, candidate_label in enumerate(candidates, start=1):
                     option_text = self._build_option_label(candidate_label, scoreboard)
-                    option = OptionList.Option(option_text, str(idx))
+                    option = Option(option_text, str(idx))
                     self.selection_list.add_option(option)
                 self.selection_list.display = True
                 self.selection_list.focus()
