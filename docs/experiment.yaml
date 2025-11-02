@@ -63,3 +63,15 @@
   - uv run pytest
   result: tests 15 passed
   notes: logs/25-11-02-09_hello.logで実行履歴が追跡できる状態を確認
+- date: '2025-11-02'
+  time_utc: '01:16:19'
+  summary: 新しいHELLOスクリプトをTTDで追加
+  details:
+  - 失敗するpytest tests/25-11-02-10_hello_script_test.pyを先に作成し、HELLO標準出力とログ生成を検証
+  - 25-11-02-10_hello.pyで詳細なDEBUGログとHELLO標準出力を実装
+  - uv run pytestで単体および全体テストを実行し、既存動作との整合を確認
+  reproduce:
+  - uv run pytest tests/25-11-02-10_hello_script_test.py
+  - uv run pytest
+  result: tests 16 passed
+  notes: logs/25-11-02-10_hello.logにhello_script_start/message_prepared/completeのログが出力されることを確認
