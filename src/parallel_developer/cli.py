@@ -21,6 +21,7 @@ from textual.app import App, ComposeResult
 from rich.text import Text
 from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
+from textual.widget import Widget
 from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
@@ -182,6 +183,9 @@ class StatusPanel(Static):
 
 
 class EventLog(RichLog):
+    can_focus = False
+    focus_on_click = False
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, highlight=True, markup=True, **kwargs)
 
@@ -1110,6 +1114,25 @@ class ParallelDeveloperApp(App):
             elif event.key in {"up", "k"}:
                 self.command_palette.move_previous()
                 event.stop()
+
+    def on_click(self, event: events.Click) -> None:
+        if not self.command_input:
+            return
+        control = event.control
+        if control is None:
+            self.set_focus(self.command_input)
+            return
+
+        def within(widget: Optional[Widget]) -> bool:
+            return bool(widget and widget in control.ancestors_with_self)
+
+        if within(self.command_input):
+            return
+        if self.selection_list and self.selection_list.display and within(self.selection_list):
+            return
+        if self.command_palette and self.command_palette.display and within(self.command_palette):
+            return
+        self.set_focus(self.command_input)
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if self.selection_list and event.option_list is self.selection_list:

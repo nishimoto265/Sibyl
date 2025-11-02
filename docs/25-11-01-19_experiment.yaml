@@ -145,3 +145,14 @@
   - uv run pytest
   result: tests 34 passed
   notes: `.venv/bin/pdev`を直接起動せずともUIフローをpytestで再現できることを確認
+- date: '2025-11-02'
+  time_utc: '22:30:00'
+  summary: 入力フォーカス制御とクリック操作の挙動を統一
+  details:
+  - EventLogをクリックしてもフォーカスが移動しないようcan_focus/focus_on_clickを無効化
+  - ParallelDeveloperApp.on_clickでOptionList選択時を除き常に入力欄へフォーカスを戻す処理を追加
+  - run_testベースのUIテストでログクリック・空白クリック・選択肢クリック時のフォーカス遷移を検証
+  reproduce:
+  - uv run pytest
+  result: tests 37 passed
+  notes: クリック後も端末の選択ハイライトは維持されるため、ログのドラッグ選択→コピーも可能
