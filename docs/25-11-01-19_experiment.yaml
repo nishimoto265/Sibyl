@@ -134,3 +134,14 @@
   - uv run pytest
   result: tests 32 passed
   notes: 実行時にAttributeError: 'NoneType' object has no attribute 'get_height'が再発しないことを手動確認
+- date: '2025-11-02'
+  time_utc: '22:10:00'
+  summary: Textualテストでコマンドパレット挙動を再現
+  details:
+  - CommandPaletteの内部メソッド名を_rebuild_renderableへ変更し、Textual内部の_static._renderと衝突しないよう修正
+  - renderable更新時はrefresh()のみ呼ぶよう整理し、Noneが返ることで再発していたget_height例外を根絶
+  - Textualのrun_test()を使い、スラッシュ入力と矢印キー操作でパレットが開閉・遷移するUIテストを追加
+  reproduce:
+  - uv run pytest
+  result: tests 34 passed
+  notes: `.venv/bin/pdev`を直接起動せずともUIフローをpytestで再現できることを確認
