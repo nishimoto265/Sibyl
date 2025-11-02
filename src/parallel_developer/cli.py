@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 import uuid
 from dataclasses import dataclass, field
@@ -268,6 +269,9 @@ class InteractiveCLI:
         manifest = self._manifest_store.load_manifest(ref.session_id)
         self._apply_manifest(manifest)
         typer.echo(f"セッション {manifest.session_id} を読み込みました。")
+        if manifest.scoreboard:
+            typer.echo("[parallel-dev] 前回のスコアボード:")
+            self._print_scoreboard(manifest.scoreboard)
         self._show_conversation_log(manifest.conversation_log)
 
     def _apply_manifest(self, manifest: SessionManifest) -> None:
@@ -344,8 +348,18 @@ class InteractiveCLI:
         if not path.exists():
             typer.echo("会話ログは利用できません。")
             return
+        lines = path.read_text(encoding="utf-8").splitlines()
         typer.echo("\n--- Conversation Log ---")
-        typer.echo(path.read_text(encoding="utf-8"))
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+                pane = payload.get("pane", "?")
+                instruction = payload.get("instruction", "")
+                typer.echo(f"[{pane}] {instruction}")
+            except json.JSONDecodeError:
+                typer.echo(line)
         typer.echo("--- End Conversation Log ---\n")
 
     # ------------------------------------------------------------------ #
