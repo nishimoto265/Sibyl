@@ -1138,6 +1138,11 @@ class ParallelDeveloperApp(App):
             "cmd+shift+c",
             "command+shift+c",
             "meta+shift+c",
+            "ctrl+alt+c",
+            "control+alt+c",
+            "cmd+alt+c",
+            "command+alt+c",
+            "meta+alt+c",
         }
 
         def matches(shortcuts: set[str]) -> bool:
@@ -1168,6 +1173,7 @@ class ParallelDeveloperApp(App):
                 clipboard_text = "\n".join(strip.text.rstrip() for strip in self.log_panel.lines)
             if clipboard_text:
                 self.copy_to_clipboard(clipboard_text)
+                self._post_event("status", {"message": "ログをクリップボードへコピーしました"})
                 event.stop()
                 return True
         return False

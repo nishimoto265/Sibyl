@@ -160,7 +160,7 @@
   time_utc: '22:55:00'
   summary: ログ選択のコピー操作をショートカット対応
   details:
-  - ParallelDeveloperAppでctrl+shift+c等のショートカットを捕捉し、選択範囲優先でログ内容をクリップボードへ転送する処理を実装
+  - ParallelDeveloperAppでctrl+alt+c（およびctrl+shift+c等）のショートカットを捕捉し、選択範囲優先でログ内容をクリップボードへ転送する処理を実装
   - 選択情報が取得できない場合はRichLog.linesからプレーンテキストを構築してコピーするフォールバックを追加
   - ctrl+a系ショートカットでログ全体を即時選択できるようにし、UIテストでショートカット経路を検証
   reproduce:

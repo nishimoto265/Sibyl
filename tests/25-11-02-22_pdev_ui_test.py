@@ -91,7 +91,7 @@ async def test_event_log_copy_to_clipboard() -> None:
         event_log.log("beta")
         await pilot.pause()
         select_event = events.Key("ctrl+a", None)
-        copy_event = events.Key("ctrl+shift+c", None)
+        copy_event = events.Key("ctrl+alt+c", None)
         assert app._handle_text_shortcuts(select_event) is True
         selection = event_log.text_selection
         if selection:
