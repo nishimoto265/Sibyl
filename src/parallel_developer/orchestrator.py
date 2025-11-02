@@ -248,17 +248,17 @@ class Orchestrator:
         resume_session_id: Optional[str],
     ) -> tuple[str, str]:
         if resume_session_id:
-            self._tmux.resume_session(
+            self._monitor.bind_existing_session(
                 pane_id=layout.main_pane,
-                workdir=self._worktree.root,
                 session_id=resume_session_id,
             )
+            main_session_id = resume_session_id
         else:
             self._tmux.launch_main_session(pane_id=layout.main_pane)
-        main_session_id = self._monitor.register_new_rollout(
-            pane_id=layout.main_pane,
-            baseline=baseline,
-        )
+            main_session_id = self._monitor.register_new_rollout(
+                pane_id=layout.main_pane,
+                baseline=baseline,
+            )
 
         user_instruction = instruction.rstrip()
         formatted_instruction = self._ensure_done_directive(user_instruction)

@@ -358,6 +358,34 @@ class CodexMonitor:
         }
         self._write_map(data)
 
+    def bind_existing_session(self, *, pane_id: str, session_id: str) -> None:
+        data = self._load_map()
+        sessions = data.setdefault("sessions", {})
+        entry = sessions.get(session_id)
+        if entry is None:
+            raise RuntimeError(f"Session {session_id!r} not found in session_map")
+
+        rollout_path = Path(entry.get("rollout_path", ""))
+        try:
+            offset = rollout_path.stat().st_size
+        except OSError:
+            offset = int(entry.get("offset", 0))
+
+        entry["pane_id"] = pane_id
+        entry["offset"] = int(offset)
+
+        panes = data.setdefault("panes", {})
+        for existing_pane, pane_entry in list(panes.items()):
+            if pane_entry.get("session_id") == session_id or existing_pane == pane_id:
+                panes.pop(existing_pane, None)
+
+        panes[pane_id] = {
+            "session_id": session_id,
+            "rollout_path": entry["rollout_path"],
+            "offset": int(offset),
+        }
+        self._write_map(data)
+
     def snapshot_rollouts(self) -> Dict[Path, float]:
         if not self.codex_sessions_root.exists():
             return {}

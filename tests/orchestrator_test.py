@@ -175,3 +175,47 @@ def test_orchestrator_runs_happy_path(dependencies):
         "worker-3": "session-worker-3",
     }
     assert result.artifact.boss_session_id == "session-boss"
+
+
+def test_orchestrator_reuses_main_session_without_resume(dependencies):
+    orchestrator = Orchestrator(
+        tmux_manager=dependencies["tmux"],
+        worktree_manager=dependencies["worktree"],
+        monitor=dependencies["monitor"],
+        log_manager=dependencies["logger"],
+        worker_count=3,
+        session_name="parallel-dev",
+    )
+
+    def selector(candidates, scoreboard=None):
+        scores = {candidate.key: 0.0 for candidate in candidates}
+        scores["boss"] = 1.0
+        return SelectionDecision(selected_key="boss", scores=scores)
+
+    tmux = dependencies["tmux"]
+    monitor = dependencies["monitor"]
+    worktree = dependencies["worktree"]
+
+    monitor.bind_existing_session = Mock()
+    monitor.register_new_rollout.reset_mock()
+    monitor.register_new_rollout.side_effect = ["session-boss"]
+    monitor.capture_instruction.return_value = "session-prev"
+
+    orchestrator.run_cycle(
+        dependencies["instruction"],
+        selector=selector,
+        resume_session_id="session-prev",
+    )
+
+    monitor.bind_existing_session.assert_called_once_with(
+        pane_id="pane-main",
+        session_id="session-prev",
+    )
+    tmux.launch_main_session.assert_not_called()
+    assert not tmux.resume_session.called
+    monitor.register_new_rollout.assert_called_once_with(
+        pane_id="pane-boss",
+        baseline={Path("/rollout-main"): 1.0},
+    )
+    worktree.merge_into_main.assert_called()
+    tmux.promote_to_main.assert_called()
