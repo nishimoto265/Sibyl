@@ -57,6 +57,10 @@ def test_handle_instruction_runs_builder_and_saves_manifest(manifest_store, tmp_
         sessions_summary={"main": {"selected": True}},
         artifact=artifact,
     )
+    jsonl_path = logs_root / "cycles" / "test.jsonl"
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    jsonl_path.write_text('{"type":"instruction","instruction":"Implement feature X"}\n', encoding="utf-8")
+    artifact.log_paths["jsonl"] = jsonl_path
 
     captured_kwargs = {}
 
@@ -80,3 +84,6 @@ def test_handle_instruction_runs_builder_and_saves_manifest(manifest_store, tmp_
     assert len(sessions) == 1
     manifest = manifest_store.load_manifest(sessions[0].session_id)
     assert manifest.latest_instruction == "Implement feature X"
+    assert manifest.conversation_log.endswith(".jsonl")
+    conversation_path = Path(manifest.conversation_log)
+    assert conversation_path.exists()

@@ -55,6 +55,7 @@ class CycleArtifact:
     boss_path: Optional[Path]
     instruction: str
     tmux_session: str
+    log_paths: Dict[str, Path] = field(default_factory=dict)
 
 
 class Orchestrator:
@@ -149,7 +150,7 @@ class Orchestrator:
                 sessions_summary=scoreboard,
                 artifact=artifact,
             )
-            self._log.record_cycle(
+            log_paths = self._log.record_cycle(
                 instruction=formatted_instruction,
                 layout={
                     "main": layout.main_pane,
@@ -160,6 +161,7 @@ class Orchestrator:
                 completion=completion_info,
                 result=result,
             )
+            artifact.log_paths = log_paths
             return result
 
         decision, scoreboard = self._auto_or_select(
@@ -178,7 +180,7 @@ class Orchestrator:
             artifact=artifact,
         )
 
-        self._log.record_cycle(
+        log_paths = self._log.record_cycle(
             instruction=formatted_instruction,
             layout={
                 "main": layout.main_pane,
@@ -189,6 +191,7 @@ class Orchestrator:
             completion=completion_info,
             result=result,
         )
+        artifact.log_paths = log_paths
 
         return result
 

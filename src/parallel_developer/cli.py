@@ -355,9 +355,32 @@ class InteractiveCLI:
                 continue
             try:
                 payload = json.loads(line)
-                pane = payload.get("pane", "?")
-                instruction = payload.get("instruction", "")
-                typer.echo(f"[{pane}] {instruction}")
+                event_type = payload.get("type")
+                if event_type == "instruction":
+                    typer.echo(f"[instruction] {payload.get('instruction', '')}")
+                elif event_type == "fork":
+                    typer.echo("[fork] workers=" + ", ".join(payload.get("fork_map", {}).keys()))
+                elif event_type == "completion":
+                    done = [k for k, v in (payload.get("completion") or {}).items() if v.get("done")]
+                    typer.echo(f"[completion] done={done}")
+                elif event_type == "scoreboard":
+                    typer.echo("[scoreboard]")
+                    scoreboard = payload.get("scoreboard", {})
+                    for key, data in scoreboard.items():
+                        score = data.get("score")
+                        comment = data.get("comment", "")
+                        selected = " [selected]" if data.get("selected") else ""
+                        typer.echo(f"  {key}: {score} {selected} {comment}")
+                elif event_type == "selection":
+                    typer.echo(
+                        f"[selection] session={payload.get('selected_session')} key={payload.get('selected_key')}"
+                    )
+                elif event_type == "artifact":
+                    typer.echo(
+                        f"[artifact] main={payload.get('main_session_id')} workers={list((payload.get('worker_sessions') or {}).keys())}"
+                    )
+                else:
+                    typer.echo(line)
             except json.JSONDecodeError:
                 typer.echo(line)
         typer.echo("--- End Conversation Log ---\n")
@@ -417,6 +440,12 @@ class InteractiveCLI:
             else None
         )
 
+        conversation_path = None
+        if artifact.log_paths.get("jsonl"):
+            conversation_path = str(artifact.log_paths["jsonl"])
+        else:
+            conversation_path = str(self._config.logs_root / "instruction.log")
+
         return SessionManifest(
             session_id=self._config.session_id,
             created_at=datetime.utcnow().isoformat(timespec="seconds"),
@@ -426,7 +455,7 @@ class InteractiveCLI:
             logs_dir=str(logs_dir),
             latest_instruction=self._last_instruction,
             scoreboard=self._last_scoreboard,
-            conversation_log=str(logs_dir / "instruction.log"),
+            conversation_log=conversation_path,
             main=main_record,
             boss=boss_record,
             workers=workers,
