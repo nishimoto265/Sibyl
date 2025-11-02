@@ -113,7 +113,7 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     main_pane = monkeypatch_server.sessions[0].windows[0].panes[0]
     assert any("cd /repo && codex" in entry[0] for entry in main_pane.sent)
     assert any("echo main" in entry[0] for entry in main_pane.sent)
-    assert ("send-keys", "-t", layout["main"], "Escape") in main_pane.cmd_calls
+    assert main_pane.sent.count(("C-c", False)) >= 2
     worker_pane = monkeypatch_server.sessions[0].windows[0].panes[2]
     assert any(entry[0].startswith("cd /repo/.parallel-dev/worktrees/worker-1 && codex resume") for entry in worker_pane.sent)
     assert worker_pane.sent.count(("C-[", False)) >= 2

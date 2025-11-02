@@ -152,7 +152,12 @@ class TmuxLayoutManager:
 
     def interrupt_pane(self, *, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
-        pane.cmd("send-keys", "-t", pane_id, "Escape")
+        pane.send_keys("C-c", enter=False)
+        if self.backtrack_delay > 0:
+            time.sleep(self.backtrack_delay)
+        pane.send_keys("C-c", enter=False)
+        if self.backtrack_delay > 0:
+            time.sleep(self.backtrack_delay)
 
     def _get_or_create_session(self, fresh: bool = False):
         session = self._server.find_where({"session_name": self.session_name})
@@ -185,12 +190,6 @@ class TmuxLayoutManager:
 
     def _send_text(self, pane_id: str, text: str) -> None:
         pane = self._get_pane(pane_id)
-        pane.send_keys("C-c", enter=False)
-        if self.backtrack_delay > 0:
-            time.sleep(self.backtrack_delay)
-        pane.send_keys("C-c", enter=False)
-        if self.backtrack_delay > 0:
-            time.sleep(self.backtrack_delay)
         payload = text.replace("\r\n", "\n")
         pane.send_keys(f"\x1b[200~{payload}\x1b[201~", enter=True)
 

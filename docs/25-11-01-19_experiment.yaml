@@ -52,3 +52,14 @@
   - uv run pytest
   result: tests 15 passed
   notes: 各ワーカーロールアウトIDはCodexMonitorが取得し、指示送信はtmux pane_idを用いるフローで整合
+- date: '2025-11-02'
+  time_utc: '19:35:00'
+  summary: メインCodex停止処理をCtrl+C化
+  details:
+  - TmuxLayoutManager.interrupt_paneでEsc送信をやめ、Ctrl+Cを二度送るよう変更
+  - tmuxマネージャテストの期待値をCtrl+C送信に合わせて更新
+  - uv run pytestで全18件のテストが成功することを確認
+  reproduce:
+  - uv run pytest
+  result: tests 18 passed
+  notes: メインpaneリジューム前にcodexが確実に終了し、既存セッションへ誤送信しなくなることを狙った変更
