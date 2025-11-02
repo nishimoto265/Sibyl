@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,17 +35,16 @@ class TmuxAttachManager:
         command = [
             "tmux",
             "display-popup",
+            "-t",
+            session_name,
             "-E",
             "tmux",
             "capture-pane",
             "-pt",
             f"{session_name}:{pane_id}",
         ]
-        env = None
-        if workdir:
-            env = {"PWD": str(workdir), **os.environ}
         try:
-            return subprocess.run(command, check=False, env=env)
+            return subprocess.run(command, check=False)
         except FileNotFoundError:
             return subprocess.CompletedProcess(command, returncode=127)
 
