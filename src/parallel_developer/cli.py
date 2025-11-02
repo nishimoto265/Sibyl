@@ -16,6 +16,7 @@ import shlex
 import shutil
 from subprocess import PIPE
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
@@ -201,6 +202,7 @@ class CommandPalette(Static):
         self.display = False
         self._items: List[PaletteItem] = []
         self._active_index: int = 0
+        self.update("")
 
     def set_items(self, items: List[PaletteItem]) -> None:
         self._items = items
@@ -923,22 +925,51 @@ class ParallelDeveloperApp(App):
         self._post_event("status", {"message": "待機中"})
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self.command_palette and self.command_palette.display:
+            item = self.command_palette.get_active_item()
+            if item:
+                event.stop()
+                asyncio.create_task(self._handle_palette_selection(item))
+            return
         self._hide_command_palette()
         if self.command_input:
             self.command_input.value = ""
         asyncio.create_task(self.controller.handle_input(event.value))
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if self._palette_mode == "options":
-            return
         value = event.value
         if not value:
             self._hide_command_palette()
             return
-        if value.startswith("/") and " " not in value:
-            self._update_command_suggestions(value)
-        else:
+        if not value.startswith("/"):
             self._hide_command_palette()
+            return
+        command, has_space, remainder = value.partition(" ")
+        command = command.lower()
+        if not has_space:
+            self._pending_command = None
+            self._update_command_suggestions(command)
+            return
+        spec = self.controller._command_specs.get(command)
+        if spec is None:
+            self._hide_command_palette()
+            return
+        options = self.controller.get_command_options(command)
+        if not options:
+            self._hide_command_palette()
+            return
+        remainder = remainder.strip()
+        filtered: List[PaletteItem] = []
+        for opt in options:
+            label = opt.label
+            value_str = str(opt.value)
+            if not remainder or value_str.startswith(remainder) or label.lower().startswith(remainder.lower()):
+                filtered.append(PaletteItem(label, opt.value))
+        if not filtered:
+            self._hide_command_palette()
+            return
+        self._pending_command = command
+        self._show_command_palette(filtered, mode="options")
 
     def _handle_controller_event(self, event_type: str, payload: Dict[str, object]) -> None:
         def _post() -> None:
@@ -1054,11 +1085,35 @@ class ParallelDeveloperApp(App):
 
     def action_palette_next(self) -> None:
         if self.command_palette and self.command_palette.display:
-            self.command_palette.action_cursor_down()
+            self.command_palette.move_next()
 
     def action_palette_previous(self) -> None:
         if self.command_palette and self.command_palette.display:
-            self.command_palette.action_cursor_up()
+            self.command_palette.move_previous()
+
+    def on_key(self, event: events.Key) -> None:
+        if self.command_palette and self.command_palette.display:
+            if event.key in {"down", "j"}:
+                self.command_palette.move_next()
+                event.stop()
+            elif event.key in {"up", "k"}:
+                self.command_palette.move_previous()
+                event.stop()
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if self.selection_list and event.option_list is self.selection_list:
+            event.stop()
+            try:
+                index = int(event.option_id)
+            except (TypeError, ValueError):
+                return
+            self.controller._resolve_selection(index)
+            return
+        if self.command_palette and self.command_palette.display:
+            event.stop()
+            item = self.command_palette.get_active_item()
+            if item:
+                await self._handle_palette_selection(item)
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if self.command_palette and self.command_palette.display:
