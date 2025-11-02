@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 parallel-dev = "parallel_developer.cli:app"
+pdev = "parallel_developer.cli:app"
 
 [build-system]
 requires = ["hatchling"]
