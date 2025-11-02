@@ -143,6 +143,23 @@ class SelectionContext:
     scoreboard: Dict[str, Dict[str, object]]
 
 
+@dataclass
+class CommandSuggestion:
+    name: str
+    description: str
+
+
+@dataclass
+class CommandOption:
+    label: str
+    value: object
+
+
+@dataclass
+class PaletteItem:
+    label: str
+    value: object
+
 class ControllerEvent(Message):
     def __init__(self, event_type: str, payload: Optional[Dict[str, object]] = None) -> None:
         super().__init__()
@@ -174,8 +191,32 @@ class EventLog(RichLog):
 class CommandHint(Static):
     def update_hint(self) -> None:
         self.update(
-            "Commands : /parallel <n>, /mode main|parallel, /resume, /load <n>, /status, /scoreboard, /pick <n>, /help, /exit"
+            "Commands : /attach, /parallel, /mode, /resume, /status, /scoreboard, /help, /exit"
         )
+
+
+class CommandPalette(OptionList):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.display = False
+        self._items: List[PaletteItem] = []
+
+    def set_items(self, items: List[PaletteItem]) -> None:
+        self.clear_options()
+        self._items = items
+        for idx, item in enumerate(items):
+            self.add_option(Option(item.label, id=str(idx)))
+        if self._items:
+            self.index = 0
+
+    def get_item(self, option_id: str) -> Optional[PaletteItem]:
+        try:
+            index = int(option_id)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
 
 
 class CLIController:
@@ -206,100 +247,170 @@ class CLIController:
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)
         self._settings: Dict[str, object] = self._load_settings()
         self._attach_mode: str = str(self._settings.get("attach_mode", "auto"))
+        self._command_specs: Dict[str, Dict[str, object]] = {
+            "/attach": {
+                "description": "tmux セッションへの接続モードを切り替える、または即座に接続する",
+                "options": [
+                    CommandOption("auto", "auto"),
+                    CommandOption("manual", "manual"),
+                    CommandOption("now", "now"),
+                ],
+            },
+            "/parallel": {
+                "description": "ワーカー数を設定する",
+                "options": [CommandOption(str(n), str(n)) for n in range(1, 5)],
+            },
+            "/mode": {
+                "description": "実行モードを切り替える",
+                "options": [
+                    CommandOption("main", "main"),
+                    CommandOption("parallel", "parallel"),
+                ],
+            },
+            "/resume": {
+                "description": "保存済みセッションを再開する",
+                "options_provider": self._build_resume_options,
+            },
+            "/status": {"description": "現在の状態を表示する"},
+            "/scoreboard": {"description": "直近のスコアボードを表示する"},
+            "/help": {"description": "コマンド一覧を表示する"},
+            "/exit": {"description": "CLI を終了する"},
+        }
 
     async def handle_input(self, user_input: str) -> None:
         text = user_input.strip()
         if not text:
             return
         if text.startswith("/"):
-            await self._handle_command(text)
+            await self._execute_text_command(text)
         else:
             await self._run_instruction(text)
 
-    async def _handle_command(self, command: str) -> None:
-        parts = command.split()
+    async def _execute_text_command(self, command_text: str) -> None:
+        parts = command_text.split(maxsplit=1)
+        if not parts:
+            return
         name = parts[0].lower()
+        if name == "/quit":
+            name = "/exit"
+        option = parts[1].strip() if len(parts) > 1 else None
+        if option == "":
+            option = None
+        await self.execute_command(name, option)
 
-        if name in {"/exit", "/quit"}:
+    def get_command_suggestions(self, prefix: str) -> List[CommandSuggestion]:
+        prefix = (prefix or "/").lower()
+        if not prefix.startswith("/"):
+            prefix = "/" + prefix
+        suggestions: List[CommandSuggestion] = []
+        for name in sorted(self._command_specs.keys()):
+            if name.startswith(prefix):
+                spec = self._command_specs[name]
+                suggestions.append(CommandSuggestion(name=name, description=spec["description"]))
+        if not suggestions and prefix == "/":
+            for name in sorted(self._command_specs.keys()):
+                spec = self._command_specs[name]
+                suggestions.append(CommandSuggestion(name=name, description=spec["description"]))
+        return suggestions
+
+    def get_command_options(self, name: str) -> List[CommandOption]:
+        spec = self._command_specs.get(name)
+        if not spec:
+            return []
+        if "options_provider" in spec:
+            return spec["options_provider"]()
+        if "options" in spec:
+            return [CommandOption(item.label, item.value) for item in spec["options"]]
+        return []
+
+    async def execute_command(self, name: str, option: Optional[object] = None) -> None:
+        spec = self._command_specs.get(name)
+        if spec is None:
+            self._emit("log", {"text": f"未知のコマンドです: {name}"})
+            return
+
+        if name == "/exit":
             self._emit("quit", {})
             return
 
         if name == "/help":
-            self._emit(
-                "log",
-                {
-                    "text": "利用可能なコマンド:\n"
-                    "  /parallel <n>   : ワーカー数を n に設定\n"
-                    "  /mode main      : メインのみで実行\n"
-                    "  /mode parallel  : 並列実行に戻す\n"
-                    "  /resume         : 保存済みセッションを一覧\n"
-                    "  /load <n>       : 一覧から指定番号を再開\n"
-                    "  /status         : 現在の状態を表示\n"
-                    "  /scoreboard     : 直近スコアを表示\n"
-                    "  /pick <n>       : 候補選択\n"
-                    "  /help           : このヘルプ\n"
-                    "  /exit           : 終了"
-                },
-            )
+            help_lines = ["利用可能なコマンド:"]
+            for cmd in sorted(self._command_specs.keys()):
+                help_lines.append(f"  {cmd:10s} : {self._command_specs[cmd]['description']}")
+            self._emit("log", {"text": "\n".join(help_lines)})
             return
 
         if name == "/status":
             self._emit_status("待機中")
             return
 
-        if name == "/parallel":
-            if len(parts) != 2 or not parts[1].isdigit():
-                self._emit("log", {"text": "使い方: /parallel <ワーカー数>"})
-                return
-            self._config.worker_count = int(parts[1])
-            self._emit_status("設定を更新しました。")
-            return
-
-        if name == "/mode":
-            if len(parts) != 2 or parts[1].lower() not in {"main", "parallel"}:
-                self._emit("log", {"text": "使い方: /mode main | /mode parallel"})
-                return
-            self._config.mode = SessionMode(parts[1].lower())
-            self._emit_status("設定を更新しました。")
-            return
-
-        if name == "/attach":
-            if len(parts) == 2:
-                mode = parts[1].lower()
-                if mode in {"auto", "manual"}:
-                    self._attach_mode = mode
-                    self._emit("log", {"text": f"/attach モードを {mode} に設定しました。"})
-                    self._save_settings()
-                    return
-                self._emit("log", {"text": "使い方: /attach [auto|manual]"})
-                return
-            await self._handle_attach_command(force=True)
-            return
-
         if name == "/scoreboard":
             self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
             return
 
-        if name == "/resume":
-            self._list_sessions()
+        if name == "/attach":
+            mode = (str(option).lower() if option is not None else None)
+            if mode in {"auto", "manual"}:
+                self._attach_mode = mode
+                self._emit("log", {"text": f"/attach モードを {mode} に設定しました。"})
+                self._save_settings()
+                return
+            if mode == "now" or option is None:
+                await self._handle_attach_command(force=True)
+                return
+            self._emit("log", {"text": "使い方: /attach [auto|manual|now]"})
             return
 
-        if name == "/load":
-            if len(parts) != 2 or not parts[1].isdigit():
-                self._emit("log", {"text": "使い方: /load <番号>"})
+        if name == "/parallel":
+            if option is None:
+                self._emit("log", {"text": "使い方: /parallel <ワーカー数>"})
                 return
-            index = int(parts[1])
+            try:
+                value = int(str(option))
+            except ValueError:
+                self._emit("log", {"text": "ワーカー数は数字で指定してください。"})
+                return
+            if value < 1:
+                self._emit("log", {"text": "ワーカー数は1以上で指定してください。"})
+                return
+            self._config.worker_count = value
+            self._emit_status("設定を更新しました。")
+            return
+
+        if name == "/mode":
+            mode = (str(option).lower() if option is not None else None)
+            if mode not in {"main", "parallel"}:
+                self._emit("log", {"text": "使い方: /mode main | /mode parallel"})
+                return
+            self._config.mode = SessionMode(mode)
+            self._emit_status("設定を更新しました。")
+            return
+
+        if name == "/resume":
+            if option is None:
+                self._list_sessions()
+                return
+            index: Optional[int] = None
+            if isinstance(option, int):
+                index = option
+            else:
+                try:
+                    index = int(str(option))
+                except ValueError:
+                    index = self._find_resume_index_by_session(str(option))
+            if index is None:
+                self._emit("log", {"text": "指定されたセッションが見つかりません。"})
+                return
             self._load_session(index)
             return
 
-        if name == "/pick":
-            if len(parts) != 2 or not parts[1].isdigit():
-                self._emit("log", {"text": "使い方: /pick <番号>"})
-                return
-            self._resolve_selection(int(parts[1]))
-            return
-
-        self._emit("log", {"text": f"未知のコマンドです: {command}"})
+    def _find_resume_index_by_session(self, token: str) -> Optional[int]:
+        if not self._resume_options:
+            self._resume_options = self._manifest_store.list_sessions()
+        for idx, ref in enumerate(self._resume_options, start=1):
+            if ref.session_id == token or ref.session_id.startswith(token):
+                return idx
+        return None
 
     async def _run_instruction(self, instruction: str) -> None:
         if self._running:
@@ -436,6 +547,18 @@ class CLIController:
         else:
             self._emit("log", {"text": "tmuxへの接続に失敗しました。tmuxが利用可能か確認してください。"})
 
+    def _build_resume_options(self) -> List[CommandOption]:
+        references = self._manifest_store.list_sessions()
+        self._resume_options = references
+        options: List[CommandOption] = []
+        for idx, ref in enumerate(references, start=1):
+            summary = ref.latest_instruction or ""
+            label = f"{idx}. {ref.created_at} | tmux={ref.tmux_session}"
+            if summary:
+                label += f" | last: {summary[:40]}"
+            options.append(CommandOption(label, idx))
+        return options
+
     def _list_sessions(self) -> None:
         references = self._manifest_store.list_sessions()
         self._resume_options = references
@@ -453,7 +576,7 @@ class CLIController:
             if summary:
                 lines.append(f"   last instruction: {summary[:80]}")
         self._emit("log", {"text": "\n".join(lines)})
-        self._emit("log", {"text": "再開するには /load <番号> を入力してください。"})
+        self._emit("log", {"text": "再開するには /resume からセッションを選択してください。"})
 
     def _load_session(self, index: int) -> None:
         if not self._resume_options:
@@ -731,6 +854,9 @@ class ParallelDeveloperApp(App):
     BINDINGS = [
         ("ctrl+c", "quit", "終了"),
         ("ctrl+q", "quit", "終了"),
+        ("escape", "close_palette", "閉じる"),
+        ("tab", "palette_next", "次候補"),
+        ("shift+tab", "palette_previous", "前候補"),
     ]
 
     def __init__(self) -> None:
@@ -739,6 +865,9 @@ class ParallelDeveloperApp(App):
         self.log_panel: Optional[EventLog] = None
         self.selection_list: Optional[OptionList] = None
         self.command_input: Optional[Input] = None
+        self.command_palette: Optional[CommandPalette] = None
+        self._palette_mode: Optional[str] = None
+        self._pending_command: Optional[str] = None
         self.controller = CLIController(
             event_handler=self._handle_controller_event,
             manifest_store=ManifestStore(),
@@ -757,6 +886,9 @@ class ParallelDeveloperApp(App):
                 self.selection_list = OptionList(id="selection")
                 self.selection_list.display = False
                 yield self.selection_list
+                self.command_palette = CommandPalette(id="command-palette")
+                self.command_palette.display = False
+                yield self.command_palette
                 hint = CommandHint(id="hint")
                 hint.update_hint()
                 yield hint
@@ -770,9 +902,22 @@ class ParallelDeveloperApp(App):
         self._post_event("status", {"message": "待機中"})
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._hide_command_palette()
         if self.command_input:
             self.command_input.value = ""
         asyncio.create_task(self.controller.handle_input(event.value))
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if self._palette_mode == "options":
+            return
+        value = event.value
+        if not value:
+            self._hide_command_palette()
+            return
+        if value.startswith("/") and " " not in value:
+            self._update_command_suggestions(value)
+        else:
+            self._hide_command_palette()
 
     def _handle_controller_event(self, event_type: str, payload: Dict[str, object]) -> None:
         def _post() -> None:
@@ -853,12 +998,85 @@ class ParallelDeveloperApp(App):
             return f"{label_body} • {score_text} • {comment}"
         return f"{label_body} • {score_text}"
 
-    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        try:
-            index = int(event.option_id)
-        except (TypeError, ValueError):
+    def _update_command_suggestions(self, prefix: str) -> None:
+        suggestions = self.controller.get_command_suggestions(prefix)
+        if not suggestions:
+            self._hide_command_palette()
             return
-        await self.controller.handle_input(f"/pick {index}")
+        items = [PaletteItem(f"{s.name:<10} {s.description}", s.name) for s in suggestions]
+        self._show_command_palette(items, mode="command")
+
+    def _show_command_palette(self, items: List[PaletteItem], *, mode: str) -> None:
+        if not self.command_palette:
+            return
+        if not items:
+            self._hide_command_palette()
+            return
+        self._palette_mode = mode
+        self.command_palette.set_items(items)
+        self.command_palette.display = True
+        self.command_palette.focus()
+
+    def _hide_command_palette(self) -> None:
+        if self.command_palette:
+            self.command_palette.display = False
+            self.command_palette.set_items([])
+        self._palette_mode = None
+        self._pending_command = None
+        if self.command_input:
+            self.command_input.focus()
+
+    def action_close_palette(self) -> None:
+        self._hide_command_palette()
+
+    def action_palette_next(self) -> None:
+        if self.command_palette and self.command_palette.display:
+            self.command_palette.action_cursor_down()
+
+    def action_palette_previous(self) -> None:
+        if self.command_palette and self.command_palette.display:
+            self.command_palette.action_cursor_up()
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if self.selection_list and event.option_list is self.selection_list:
+            event.stop()
+            try:
+                index = int(event.option_id)
+            except (TypeError, ValueError):
+                return
+            self.controller._resolve_selection(index)
+            return
+        if self.command_palette and event.option_list is self.command_palette:
+            event.stop()
+            item = self.command_palette.get_item(event.option_id)
+            if not item:
+                return
+            await self._handle_palette_selection(item)
+
+    async def _handle_palette_selection(self, item: PaletteItem) -> None:
+        if self._palette_mode == "command":
+            command_name = str(item.value)
+            options = self.controller.get_command_options(command_name)
+            if options:
+                self._pending_command = command_name
+                option_items = [PaletteItem(opt.label, opt.value) for opt in options]
+                self._show_command_palette(option_items, mode="options")
+                if self.command_input:
+                    self.command_input.value = f"{command_name} "
+                return
+            if self.command_input:
+                self.command_input.value = ""
+            self._hide_command_palette()
+            await self.controller.execute_command(command_name)
+            return
+        if self._palette_mode == "options" and self._pending_command:
+            command_name = self._pending_command
+            value = item.value
+            self._pending_command = None
+            if self.command_input:
+                self.command_input.value = ""
+            self._hide_command_palette()
+            await self.controller.execute_command(command_name, value)
 
 
 def build_orchestrator(

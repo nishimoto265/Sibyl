@@ -10,7 +10,7 @@ import pytest
 
 from parallel_developer.cli import CLIController, SessionMode, TmuxAttachManager
 from parallel_developer.orchestrator import CycleArtifact, OrchestrationResult
-from parallel_developer.session_manifest import ManifestStore
+from parallel_developer.session_manifest import ManifestStore, PaneRecord, SessionManifest
 from types import SimpleNamespace
 
 
@@ -388,3 +388,53 @@ def test_auto_attach_after_instruction(monkeypatch, manifest_store, tmp_path):
 
     assert controller._attach_manager.attach.call_count == 1
     assert any("接続しました" in payload.get("text", "") for event, payload in events if event == "log")
+
+
+def test_command_suggestions_and_options(manifest_store, tmp_path):
+    controller = CLIController(
+        event_handler=lambda *_: None,
+        orchestrator_builder=lambda **_: Mock(),
+        manifest_store=manifest_store,
+        worktree_root=tmp_path,
+    )
+
+    suggestions = controller.get_command_suggestions("/")
+    assert any(s.name == "/attach" for s in suggestions)
+    assert any(s.name == "/resume" for s in suggestions)
+
+    # Prepare a session manifest to surface resume options
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    conversation = logs_dir / "conversation.jsonl"
+    conversation.write_text("{}\n", encoding="utf-8")
+    manifest = SessionManifest(
+        session_id="session-test",
+        created_at="2025-11-02T10:00:00",
+        tmux_session="tmux-test",
+        worker_count=1,
+        mode="parallel",
+        logs_dir=str(logs_dir),
+        latest_instruction="Test instruction",
+        scoreboard={},
+        conversation_log=str(conversation),
+        selected_session_id=None,
+        main=PaneRecord(role="main", name="main", session_id="main-session"),
+        boss=None,
+        workers={},
+    )
+    manifest_store.save_manifest(manifest)
+    controller._ensure_tmux_session = Mock()
+
+    options = controller.get_command_options("/resume")
+    assert options
+    index_value = options[0].value
+    events: list = []
+
+    def handler(event_type, payload):
+        if event_type == "log":
+            events.append(payload)
+
+    controller._event_handler = handler
+    _run_async(controller.execute_command("/resume", index_value))
+    assert any("読み込みました" in payload.get("text", "") for payload in events)
+    controller._ensure_tmux_session.assert_called_once()
