@@ -199,12 +199,22 @@ class TmuxLayoutManager:
         return session
 
     def _get_pane(self, pane_id: str):
-        for session in self._server.sessions:
-            for window in session.windows:
-                for pane in window.panes:
-                    if pane.pane_id == pane_id:
-                        return pane
+        pane = self._find_pane(pane_id)
+        if pane is not None:
+            return pane
+        self._server = libtmux.Server()
+        pane = self._find_pane(pane_id)
+        if pane is not None:
+            return pane
         raise RuntimeError(f"Pane {pane_id!r} not found in tmux session {self.session_name}")
+
+    def _find_pane(self, pane_id: str):
+        for session in getattr(self._server, "sessions", []):
+            for window in getattr(session, "windows", []):
+                for pane in getattr(window, "panes", []):
+                    if getattr(pane, "pane_id", None) == pane_id:
+                        return pane
+        return None
 
     def _send_command(self, pane_id: str, command: str) -> None:
         pane = self._get_pane(pane_id)
