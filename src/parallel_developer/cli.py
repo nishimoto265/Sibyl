@@ -194,14 +194,7 @@ class EventLog(RichLog):
 
     def log(self, text: str) -> None:
         for line in text.splitlines():
-            if self.markup:
-                renderable = Text.from_markup(line)
-            else:
-                renderable = Text(line)
-            renderable.no_wrap = False
-            renderable.overflow = "fold"
-            width = self.size.width if self.size.width else None
-            self.write(renderable, width=width)
+            self.write(line, expand=True, shrink=True)
 
 
 class CommandHint(Static):
