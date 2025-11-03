@@ -261,3 +261,13 @@
   - uv run pytest tests/25-11-02-22_pdev_ui_test.py
   result: tests 46 passed
   notes: テストはtmux起動を伴わず高速に回る
+- date: '2025-11-03'
+  time_utc: '04:56:00'
+  summary: CLI周辺のデッドコード整理を実施
+  details:
+  - 未使用だったSessionConfig.run_parallelプロパティを削除し実装を簡潔化
+  - Textualコンテナとtypingの未使用インポートを除去して警告を解消
+  reproduce:
+  - uv run pytest
+  result: tests 46 passed
+  notes: 機能回帰なしを確認済み。今後のリファクタ準備としてコードの複雑度を軽減

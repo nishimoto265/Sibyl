@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import platform
 import subprocess
 import shlex
@@ -21,7 +21,7 @@ from textual.app import App, ComposeResult
 from rich.text import Text
 from contextlib import suppress
 
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Vertical
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Footer, Header, OptionList, RichLog, Static, TextArea
@@ -136,11 +136,6 @@ class SessionConfig:
     mode: SessionMode
     logs_root: Path
     reuse_existing_session: bool = False
-
-    @property
-    def run_parallel(self) -> bool:
-        return self.mode == SessionMode.PARALLEL and self.worker_count > 0
-
 
 @dataclass
 class SelectionContext:
