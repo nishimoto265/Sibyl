@@ -144,6 +144,18 @@ async def test_shift_enter_inserts_newline() -> None:
     async with app.run_test() as pilot:  # type: ignore[attr-defined]
         await pilot.pause()
         assert app.command_input is not None
+        submitted: list[str] = []
+
+        async def _capture_input(value: str) -> None:
+            submitted.append(value)
+
+        original_handle_input = app.controller.handle_input
+
+        async def handle_input_override(value: str):
+            await _capture_input(value)
+            await original_handle_input(value)
+
+        app.controller.handle_input = handle_input_override  # type: ignore[assignment]
         app.command_input.insert("line1")
         await pilot.pause()
         await pilot.press("shift+enter")
@@ -151,3 +163,4 @@ async def test_shift_enter_inserts_newline() -> None:
         app.command_input.insert("line2")
         await pilot.pause()
         assert app.command_input.text == "line1\nline2"
+        assert submitted == []
