@@ -196,6 +196,9 @@ class CLIController:
         self._selection_context: Optional[SelectionContext] = None
         self._resume_options: List[SessionReference] = []
         self._last_selected_session: Optional[str] = None
+        self._paused: bool = False
+        self._revert_pending: bool = False
+        self._cycle_history: List[Dict[str, object]] = []
         self._attach_manager = TmuxAttachManager()
         self._settings_path = Path(settings_path) if settings_path else (self._worktree_root / ".parallel-dev" / "settings.json")
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -244,8 +247,11 @@ class CLIController:
             return
         if text.startswith("/"):
             await self._execute_text_command(text)
-        else:
-            await self._run_instruction(text)
+            return
+        if self._paused:
+            await self._dispatch_paused_instruction(text)
+            return
+        await self._run_instruction(text)
 
     async def _execute_text_command(self, command_text: str) -> None:
         parts = command_text.split(maxsplit=1)
@@ -407,25 +413,9 @@ class CLIController:
 
     def broadcast_escape(self) -> None:
         session_name = self._config.tmux_session
-        try:
-            result = subprocess.run(
-                ["tmux", "list-panes", "-t", session_name, "-F", "#{pane_id}"],
-                check=False,
-                stdout=PIPE,
-                stderr=PIPE,
-                text=True,
-            )
-        except FileNotFoundError:
-            self._emit("log", {"text": "tmux コマンドが見つかりません。tmuxがインストールされているか確認してください。"})
+        pane_ids = self._tmux_list_panes()
+        if pane_ids is None:
             return
-
-        if result.returncode != 0:
-            message = (result.stderr or result.stdout or "").strip()
-            if message:
-                self._emit("log", {"text": f"tmux list-panes に失敗しました: {message}"})
-            return
-
-        pane_ids = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
         if not pane_ids:
             self._emit("log", {"text": f"tmuxセッション {session_name} にペインが見つかりませんでした。"})
             return
@@ -436,6 +426,89 @@ class CLIController:
                 check=False,
             )
         self._emit("log", {"text": f"tmuxセッション {session_name} の {len(pane_ids)} 個のペインへEscapeを送信しました。"})
+
+    def handle_escape(self) -> None:
+        self.broadcast_escape()
+        if not self._paused:
+            self._paused = True
+            self._emit("log", {"text": "一時停止モードに入りました。追加指示は現在のtmuxペインへ送信されます。"})
+            self._emit_status("一時停止中")
+            return
+        if self._running:
+            self._revert_pending = True
+            self._paused = False
+            self._emit("log", {"text": "現在のサイクル完了後に前の状態へ戻します。"})
+            self._emit_status("巻き戻し待機中")
+            return
+        self._perform_revert()
+
+    def _tmux_list_panes(self) -> Optional[List[str]]:
+        session_name = self._config.tmux_session
+        try:
+            result = subprocess.run(
+                ["tmux", "list-panes", "-t", session_name, "-F", "#{pane_id}"],
+                check=False,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+        except FileNotFoundError:
+            self._emit("log", {"text": "tmux コマンドが見つかりません。tmuxがインストールされているか確認してください。"})
+            return None
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or "").strip()
+            if message:
+                self._emit("log", {"text": f"tmux list-panes に失敗しました: {message}"})
+            return None
+        return [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+
+    async def _dispatch_paused_instruction(self, instruction: str) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: self._send_instruction_to_panes(instruction))
+
+    def _send_instruction_to_panes(self, instruction: str) -> None:
+        session_name = self._config.tmux_session
+        pane_ids = self._tmux_list_panes()
+        if pane_ids is None:
+            return
+        if not pane_ids:
+            self._emit("log", {"text": f"tmuxセッション {session_name} にペインが見つからず、追加指示を送信できませんでした。"})
+            return
+        for pane_id in pane_ids:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane_id, instruction, "Enter"],
+                check=False,
+            )
+        preview = instruction.replace("\n", " ")[:60]
+        if len(instruction) > 60:
+            preview += "..."
+        self._emit("log", {"text": f"[pause] {len(pane_ids)} ペインへ追加指示を送信: {preview}"})
+
+    def _record_cycle_snapshot(self, result: OrchestrationResult) -> None:
+        snapshot = {
+            "selected_session": result.selected_session,
+            "scoreboard": dict(result.sessions_summary),
+            "instruction": self._last_instruction,
+        }
+        self._cycle_history.append(snapshot)
+
+    def _perform_revert(self) -> None:
+        if len(self._cycle_history) <= 1:
+            self._paused = False
+            self._emit("log", {"text": "巻き戻し可能なサイクルがありません。"})
+            self._emit_status("待機中")
+            return
+        self._cycle_history.pop()
+        snapshot = self._cycle_history[-1]
+        self._last_selected_session = snapshot.get("selected_session")
+        self._last_scoreboard = snapshot.get("scoreboard", {})
+        self._last_instruction = snapshot.get("instruction")
+        if self._last_scoreboard:
+            self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+        self._paused = False
+        summary = self._last_selected_session or "(未選択)"
+        self._emit("log", {"text": f"サイクルを巻き戻しました。次の指示はセッション {summary} から再開します。"})
+        self._emit_status("待機中")
 
     async def _run_instruction(self, instruction: str) -> None:
         if self._running:
@@ -502,12 +575,17 @@ class CLIController:
                 manifest = self._build_manifest(result, logs_dir)
                 self._manifest_store.save_manifest(manifest)
                 self._emit("log", {"text": f"セッションを保存しました: {manifest.session_id}"})
+            self._record_cycle_snapshot(result)
         except Exception as exc:  # pylint: disable=broad-except
             self._emit("log", {"text": f"エラーが発生しました: {exc}"})
         finally:
             self._selection_context = None
             self._running = False
-            self._emit_status("待機中")
+            if self._revert_pending:
+                self._revert_pending = False
+                self._perform_revert()
+            else:
+                self._emit_status("一時停止中" if self._paused else "待機中")
             if auto_attach_task:
                 try:
                     await auto_attach_task
@@ -1131,7 +1209,7 @@ class ParallelDeveloperApp(App):
 
     def action_close_palette(self) -> None:
         self._hide_command_palette()
-        self.controller.broadcast_escape()
+        self.controller.handle_escape()
 
     def action_palette_next(self) -> None:
         if self.command_palette and self.command_palette.display:

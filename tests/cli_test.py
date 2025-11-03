@@ -239,6 +239,92 @@ def test_controller_broadcast_escape(monkeypatch, tmp_path):
     assert f"tmuxセッション {controller._config.tmux_session} の 2 個のペインへEscapeを送信しました。" in logs
 
 
+def test_handle_escape_enters_pause(monkeypatch, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+    controller.broadcast_escape = lambda: None  # type: ignore[assignment]
+
+    controller.handle_escape()
+
+    assert controller._paused is True
+    status_messages = [payload["message"] for event, payload in events if event == "status"]
+    assert "一時停止中" in status_messages[-1]
+    log_messages = [payload["text"] for event, payload in events if event == "log"]
+    assert any("一時停止モード" in msg for msg in log_messages)
+
+
+def test_handle_escape_reverts_cycle(monkeypatch, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+    controller.broadcast_escape = lambda: None  # type: ignore[assignment]
+    controller._cycle_history = [
+        {"selected_session": "session-A", "scoreboard": {"main": {}}, "instruction": "first"},
+        {"selected_session": "session-B", "scoreboard": {"main": {}}, "instruction": "second"},
+    ]
+    controller._last_selected_session = "session-B"
+    controller._last_scoreboard = {"main": {}}
+    controller._paused = True
+    controller._running = False
+
+    controller.handle_escape()
+
+    assert controller._paused is False
+    assert controller._last_selected_session == "session-A"
+    status_messages = [payload["message"] for event, payload in events if event == "status"]
+    assert status_messages and status_messages[-1] == "待機中"
+    log_messages = [payload["text"] for event, payload in events if event == "log"]
+    assert any("サイクルを巻き戻しました" in msg for msg in log_messages)
+
+
+def test_handle_escape_sets_revert_pending_when_running(monkeypatch, tmp_path):
+    controller = CLIController(event_handler=lambda *_: None, worktree_root=tmp_path)
+    controller.broadcast_escape = lambda: None  # type: ignore[assignment]
+    controller._paused = True
+    controller._running = True
+
+    controller.handle_escape()
+
+    assert controller._revert_pending is True
+    assert controller._paused is False
+
+
+def test_paused_instruction_broadcast(monkeypatch, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+    controller._paused = True
+
+    recorded: list[list[str]] = []
+
+    def fake_run(command, check=False, stdout=None, stderr=None, text=None):
+        recorded.append(command)
+        if "list-panes" in command:
+            return SimpleNamespace(returncode=0, stdout="%0\n%1\n", stderr="")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _run_async(controller.handle_input("echo pause"))
+
+    expected_prefix = ["tmux", "list-panes", "-t", controller._config.tmux_session, "-F", "#{pane_id}"]
+    assert expected_prefix in recorded
+    assert ["tmux", "send-keys", "-t", "%0", "echo pause", "Enter"] in recorded
+    assert ["tmux", "send-keys", "-t", "%1", "echo pause", "Enter"] in recorded
+    log_messages = [payload["text"] for event, payload in events if event == "log"]
+    assert any("[pause]" in msg for msg in log_messages)
+
+
 def test_attach_auto_mode_skips_when_already_attached(monkeypatch, manifest_store, tmp_path):
     events = []
 

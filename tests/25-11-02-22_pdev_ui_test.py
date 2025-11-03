@@ -231,10 +231,10 @@ async def test_escape_broadcasts_to_tmux(monkeypatch) -> None:
             "value": False,
         }
 
-        def fake_broadcast() -> None:
+        def fake_handle() -> None:
             called["value"] = True
 
-        app.controller.broadcast_escape = fake_broadcast  # type: ignore[assignment]
+        app.controller.handle_escape = fake_handle  # type: ignore[assignment]
 
         await pilot.press("escape")
         await pilot.pause()

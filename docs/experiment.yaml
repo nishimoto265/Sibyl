@@ -297,9 +297,11 @@
   summary: ESCキーで全tmuxペインへESC送信する処理を追加
   details:
   - CLIControllerにbroadcast_escapeを実装し、tmux list-panes/send-keysで各ペインへEscapeを送信
-  - TextualアプリのESCバインディングでcontroller.broadcast_escapeを呼ぶよう拡張
-  - CLI/ UIテストを追加し、tmux送信コマンドが呼ばれることとESCがUI経由で発火することを検証
+  - ESC押下で一時停止モードへ遷移し、追加指示は既存ペインへブロードキャストする挙動を追加
+  - 二度目のESCで直前サイクルへ巻き戻す処理と、巻き戻し待機フラグを導入
+  - TextualアプリのESCバインディングでcontroller.handle_escapeを呼ぶよう拡張
+  - CLI/ UIテストを追加し、tmux送信コマンド・一時停止／巻き戻し・追加入力の各挙動を検証
   reproduce:
   - uv run pytest
-  result: tests 48 passed
-  notes: ショートカット操作で直接tmux側の解除が可能になり、手動でのESC入力が不要に
+  result: tests 52 passed
+  notes: 一時停止中の追加入力がワーカーへ転送され、ESC二度押しで前回サイクルの再開点へ復帰できる
