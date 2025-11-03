@@ -190,10 +190,17 @@ class EventLog(RichLog):
         super().__init__(*args, highlight=True, markup=True, **kwargs)
         self.wrap = True
         self.auto_scroll = True
+        self.min_width = 0
 
     def log(self, text: str) -> None:
         for line in text.splitlines():
-            self.write(line)
+            if self.markup:
+                renderable = Text.from_markup(line)
+            else:
+                renderable = Text(line)
+            renderable.no_wrap = False
+            renderable.overflow = "fold"
+            self.write(renderable)
 
 
 class CommandHint(Static):
