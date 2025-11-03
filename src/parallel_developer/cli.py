@@ -463,13 +463,14 @@ class CLIController:
             current_id = self._current_cycle_id
             if current_id is not None:
                 self._cancelled_cycles.add(current_id)
+            self._current_cycle_id = None
+            self._running = False
             self._paused = False
-            self._emit("log", {"text": "現在のサイクルをキャンセルしています。完了後に前の状態へ戻ります。"})
-            self._emit_status("キャンセル中")
+            self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻しました。"})
+            self._emit_status("待機中")
             self._emit_pause_state()
+            self._perform_revert(silent=True)
             return
-        self._perform_revert()
-
     def _tmux_list_panes(self) -> Optional[List[str]]:
         session_name = self._config.tmux_session
         try:

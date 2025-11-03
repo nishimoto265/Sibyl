@@ -307,3 +307,14 @@
   - uv run pytest
   result: tests 52 passed
   notes: 一時停止中の追加入力がワーカーへ転送され、ESC二度押しで前回サイクルの再開点へ復帰できる
+- date: '2025-11-03'
+  time_utc: '07:30:00'
+  summary: 一時停止モードのキャンセル挙動を安定化
+  details:
+  - ESC二度押し時に即座に待機状態へ戻るよう制御し、queued指示を適切に再実行
+  - CodexMonitorのforce_completionを介して並列ワーカーを強制完了扱いできるよう調整
+  - /doneコマンドは完了判定のみを行い、tmuxへの直接送信は不要に
+  reproduce:
+  - uv run pytest
+  result: tests 53 passed
+  notes: ESC二度押し後も指示が詰まらず、直前サイクルの状態へ即時巻き戻り可能
