@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import shlex
 import shutil
-import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +38,6 @@ class TmuxLayoutManager:
         self.backtrack_delay = backtrack_delay
         self.reuse_existing_session = reuse_existing_session
         self._server = libtmux.Server()
-        self._refresh_server()
 
     def set_boss_path(self, path: Path) -> None:
         self.boss_path = Path(path)
@@ -190,7 +188,6 @@ class TmuxLayoutManager:
     def _get_or_create_session(self, fresh: bool = False):
         session = self._server.find_where({"session_name": self.session_name})
         if session is not None and not fresh:
-            self._refresh_session(session)
             return session
 
         kill_existing = fresh and session is not None
@@ -199,13 +196,10 @@ class TmuxLayoutManager:
             attach=False,
             kill_session=kill_existing,
         )
-        self._refresh_session(session)
         return session
 
     def _get_pane(self, pane_id: str):
-        self._refresh_server()
         for session in self._server.sessions:
-            self._refresh_session(session)
             for window in session.windows:
                 for pane in window.panes:
                     if pane.pane_id == pane_id:
@@ -224,26 +218,6 @@ class TmuxLayoutManager:
         pane = self._get_pane(pane_id)
         payload = text.replace("\r\n", "\n")
         pane.send_keys(f"\x1b[200~{payload}\x1b[201~", enter=True)
-
-    def _refresh_server(self) -> None:
-        try:
-            sessions = self._server.list_sessions()
-            for session in sessions:
-                self._refresh_session(session)
-        except Exception:  # pragma: no cover - best effort refresh
-            pass
-
-    @staticmethod
-    def _refresh_session(session) -> None:
-        try:
-            session.refresh()
-        except Exception:  # pragma: no cover - ignore refresh issues
-            return
-        for window in getattr(session, "windows", []):
-            try:
-                window.refresh()
-            except Exception:
-                continue
 
 
 class WorktreeManager:
