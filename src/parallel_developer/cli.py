@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Set
 import platform
 import subprocess
 import shlex
@@ -197,9 +197,10 @@ class CLIController:
         self._resume_options: List[SessionReference] = []
         self._last_selected_session: Optional[str] = None
         self._paused: bool = False
-        self._revert_pending: bool = False
         self._cycle_history: List[Dict[str, object]] = []
-        self._ignore_current_cycle: bool = False
+        self._cycle_counter: int = 0
+        self._current_cycle_id: Optional[int] = None
+        self._cancelled_cycles: Set[int] = set()
         self._attach_manager = TmuxAttachManager()
         self._settings_path = Path(settings_path) if settings_path else (self._worktree_root / ".parallel-dev" / "settings.json")
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -411,7 +412,6 @@ class CLIController:
             if ref.session_id == token or ref.session_id.startswith(token):
                 return idx
         return None
-        self._emit_pause_state()
 
     def broadcast_escape(self) -> None:
         session_name = self._config.tmux_session
@@ -433,23 +433,19 @@ class CLIController:
         self.broadcast_escape()
         if not self._paused:
             self._paused = True
-            self._emit("log", {"text": "一時停止モードに入りました。追加指示は現在のtmuxペインへ送信されます。"})
-            self._emit_status("一時停止中")
+            self._emit("log", {"text": "一時停止モードに入りました。追加指示は現在のワーカーペインへ送信されます。"})
+            self._emit_status("一時停止モード")
             self._emit_pause_state()
             return
         if self._running:
-            self._ignore_current_cycle = True
+            current_id = self._current_cycle_id
+            if current_id is not None:
+                self._cancelled_cycles.add(current_id)
+            self._current_cycle_id = None
+            self._running = False
             self._paused = False
-            if self._cycle_history:
-                snapshot = self._cycle_history[-1]
-                self._last_selected_session = snapshot.get("selected_session")
-                self._last_scoreboard = snapshot.get("scoreboard", {})
-                self._last_instruction = snapshot.get("instruction")
-                if self._last_scoreboard:
-                    self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
-            self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻りました（進行中の結果は無視します）。"})
-            self._emit_status("待機中")
-            self._emit_pause_state()
+            self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻しました。"})
+            self._perform_revert()
             return
         self._perform_revert()
 
@@ -499,8 +495,9 @@ class CLIController:
         self._emit_pause_state()
         self._emit_status("待機中")
 
-    def _record_cycle_snapshot(self, result: OrchestrationResult) -> None:
+    def _record_cycle_snapshot(self, result: OrchestrationResult, cycle_id: int) -> None:
         snapshot = {
+            "cycle_id": cycle_id,
             "selected_session": result.selected_session,
             "scoreboard": dict(result.sessions_summary),
             "instruction": self._last_instruction,
@@ -508,19 +505,24 @@ class CLIController:
         self._cycle_history.append(snapshot)
 
     def _perform_revert(self) -> None:
-        if len(self._cycle_history) <= 1:
+        if not self._cycle_history:
             self._paused = False
             self._emit("log", {"text": "巻き戻し可能なサイクルがありません。"})
             self._emit_status("待機中")
             self._emit_pause_state()
             return
         self._cycle_history.pop()
-        snapshot = self._cycle_history[-1]
-        self._last_selected_session = snapshot.get("selected_session")
-        self._last_scoreboard = snapshot.get("scoreboard", {})
-        self._last_instruction = snapshot.get("instruction")
-        if self._last_scoreboard:
-            self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+        snapshot = self._cycle_history[-1] if self._cycle_history else None
+        if snapshot:
+            self._last_selected_session = snapshot.get("selected_session")
+            self._last_scoreboard = snapshot.get("scoreboard", {})
+            self._last_instruction = snapshot.get("instruction")
+            if self._last_scoreboard:
+                self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+        else:
+            self._last_selected_session = None
+            self._last_scoreboard = {}
+            self._last_instruction = None
         self._paused = False
         summary = self._last_selected_session or "(未選択)"
         self._emit("log", {"text": f"サイクルを巻き戻しました。次の指示はセッション {summary} から再開します。"})
@@ -538,6 +540,9 @@ class CLIController:
             self._emit("log", {"text": "候補選択待ちです。/pick <n> で選択してください。"})
             return
 
+        self._cycle_counter += 1
+        cycle_id = self._cycle_counter
+        self._current_cycle_id = cycle_id
         self._running = True
         self._emit_status("メインセッションを準備中...")
 
@@ -580,35 +585,34 @@ class CLIController:
             )
 
         auto_attach_task: Optional[asyncio.Task[None]] = None
+        cancelled = False
         try:
             self._emit("log", {"text": f"指示を開始: {instruction}"})
             if self._attach_mode == "auto":
                 auto_attach_task = asyncio.create_task(self._handle_attach_command(force=False))
             result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
-            if self._ignore_current_cycle:
-                self._ignore_current_cycle = False
-                self._emit("log", {"text": "一時停止中に開始されたサイクル結果は破棄しました。"})
-                return
-            self._last_scoreboard = dict(result.sessions_summary)
-            self._last_instruction = instruction
-            self._last_selected_session = result.selected_session
-            self._config.reuse_existing_session = True
-            self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
-            self._emit("log", {"text": "指示が完了しました。"})
-            if result.artifact:
-                manifest = self._build_manifest(result, logs_dir)
-                self._manifest_store.save_manifest(manifest)
-                self._emit("log", {"text": f"セッションを保存しました: {manifest.session_id}"})
-            self._record_cycle_snapshot(result)
+            if cycle_id in self._cancelled_cycles:
+                cancelled = True
+                self._cancelled_cycles.discard(cycle_id)
+            else:
+                self._last_scoreboard = dict(result.sessions_summary)
+                self._last_instruction = instruction
+                self._last_selected_session = result.selected_session
+                self._config.reuse_existing_session = True
+                self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+                self._emit("log", {"text": "指示が完了しました。"})
+                if result.artifact:
+                    manifest = self._build_manifest(result, logs_dir)
+                    self._manifest_store.save_manifest(manifest)
+                    self._emit("log", {"text": f"セッションを保存しました: {manifest.session_id}"})
+                self._record_cycle_snapshot(result, cycle_id)
         except Exception as exc:  # pylint: disable=broad-except
             self._emit("log", {"text": f"エラーが発生しました: {exc}"})
         finally:
             self._selection_context = None
-            self._running = False
-            if self._revert_pending:
-                self._revert_pending = False
-                self._perform_revert()
-            else:
+            if self._current_cycle_id == cycle_id:
+                self._current_cycle_id = None
+                self._running = False
                 self._emit_status("一時停止中" if self._paused else "待機中")
                 self._emit_pause_state()
             if auto_attach_task:
@@ -955,14 +959,15 @@ class ParallelDeveloperApp(App):
 
     #log {
         height: 1fr;
-        border: round $accent;
+        border: round $success;
         margin-bottom: 1;
         overflow-x: hidden;
     }
 
     #status {
-        border: round $accent-lighten-1;
+        border: round $success;
         padding: 1;
+        color: $text;
     }
 
     #selection {
@@ -980,12 +985,13 @@ class ParallelDeveloperApp(App):
         height: auto;
         min-height: 3;
         overflow-x: hidden;
+        border: round $success;
     }
 
     Screen.paused #status {
         border: round $warning;
-        background: $warning-darken-2;
-        color: $text;
+        background: $surface-lighten-2;
+        color: $warning;
     }
 
     Screen.paused #command {

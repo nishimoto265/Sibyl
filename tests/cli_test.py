@@ -252,7 +252,7 @@ def test_handle_escape_enters_pause(monkeypatch, tmp_path):
 
     assert controller._paused is True
     status_messages = [payload["message"] for event, payload in events if event == "status"]
-    assert "一時停止中" in status_messages[-1]
+    assert "一時停止モード" in status_messages[-1]
     log_messages = [payload["text"] for event, payload in events if event == "log"]
     assert any("一時停止モード" in msg for msg in log_messages)
 
@@ -284,20 +284,24 @@ def test_handle_escape_reverts_cycle(monkeypatch, tmp_path):
     assert any("サイクルを巻き戻しました" in msg for msg in log_messages)
 
 
-def test_handle_escape_sets_revert_pending_when_running(monkeypatch, tmp_path):
+def test_handle_escape_cancels_running_cycle(monkeypatch, tmp_path):
     controller = CLIController(event_handler=lambda *_: None, worktree_root=tmp_path)
     controller.broadcast_escape = lambda: None  # type: ignore[assignment]
     controller._paused = True
     controller._running = True
+    controller._current_cycle_id = 2
     controller._cycle_history = [
-        {"selected_session": "session-A", "scoreboard": {}, "instruction": "first"},
+        {"cycle_id": 1, "selected_session": "session-A", "scoreboard": {}, "instruction": "first"},
+        {"cycle_id": 2, "selected_session": "session-B", "scoreboard": {}, "instruction": "second"},
     ]
-    controller._last_selected_session = "session-A"
+    controller._last_selected_session = "session-B"
 
     controller.handle_escape()
 
-    assert controller._ignore_current_cycle is True
+    assert controller._running is False
     assert controller._paused is False
+    assert controller._current_cycle_id is None
+    assert 2 in controller._cancelled_cycles
     assert controller._last_selected_session == "session-A"
 
 
