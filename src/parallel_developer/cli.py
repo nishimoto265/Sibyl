@@ -239,6 +239,7 @@ class CLIController:
             },
             "/status": {"description": "現在の状態を表示する"},
             "/scoreboard": {"description": "直近のスコアボードを表示する"},
+            "/done": {"description": "全ワーカーに /done を送信して採点フェーズへ移行する"},
             "/help": {"description": "コマンド一覧を表示する"},
             "/exit": {"description": "CLI を終了する"},
         }
@@ -315,6 +316,10 @@ class CLIController:
 
         if name == "/scoreboard":
             self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+            return
+
+        if name == "/done":
+            await self._send_done_to_workers()
             return
 
         if name == "/attach":
@@ -494,6 +499,21 @@ class CLIController:
         self._paused = False
         self._emit_pause_state()
         self._emit_status("待機中")
+
+    async def _send_done_to_workers(self) -> None:
+        pane_ids = self._tmux_list_panes()
+        if pane_ids is None:
+            return
+        if len(pane_ids) <= 2:
+            self._emit("log", {"text": "ワーカーペインが見つからず、/done を送信できませんでした。"})
+            return
+        worker_panes = pane_ids[2:]
+        for pane_id in worker_panes:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane_id, "/done", "Enter"],
+                check=False,
+            )
+        self._emit("log", {"text": f"/done を {len(worker_panes)} ワーカーペインへ送信しました。"})
 
     def _record_cycle_snapshot(self, result: OrchestrationResult, cycle_id: int) -> None:
         snapshot = {

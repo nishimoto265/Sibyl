@@ -337,6 +337,34 @@ def test_paused_instruction_broadcast(monkeypatch, tmp_path):
     assert controller._paused is False
 
 
+def test_done_command_sends_to_workers(monkeypatch, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+
+    recorded: list[list[str]] = []
+
+    def fake_run(command, check=False, stdout=None, stderr=None, text=None):
+        recorded.append(command)
+        if "list-panes" in command:
+            return SimpleNamespace(returncode=0, stdout="%0\n%1\n%2\n", stderr="")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _run_async(controller.execute_command("/done"))
+
+    expected_prefix = ["tmux", "list-panes", "-t", controller._config.tmux_session, "-F", "#{pane_id}"]
+    assert expected_prefix in recorded
+    assert ["tmux", "send-keys", "-t", "%2", "/done", "Enter"] in recorded
+    assert ["tmux", "send-keys", "-t", "%0", "/done", "Enter"] not in recorded
+    log_messages = [payload["text"] for event, payload in events if event == "log"]
+    assert any("/done" in msg for msg in log_messages)
+
+
 def test_attach_auto_mode_skips_when_already_attached(monkeypatch, manifest_store, tmp_path):
     events = []
 

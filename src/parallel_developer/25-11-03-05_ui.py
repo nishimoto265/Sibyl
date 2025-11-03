@@ -160,7 +160,7 @@ class CommandHint(Static):
         if paused:
             suffix = " | [orange1]一時停止モード: ESCで巻き戻し、入力はワーカーへ送信[/]"
         self.update(
-            "Commands : /attach, /parallel, /mode, /resume, /log, /status, /scoreboard, /help, /exit | ESC: 一時停止/巻き戻し"
+            "Commands : /attach, /parallel, /mode, /resume, /log, /status, /scoreboard, /done, /help, /exit | ESC: 一時停止/巻き戻し"
             + suffix
         )
 
