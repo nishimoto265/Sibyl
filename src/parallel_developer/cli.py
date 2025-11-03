@@ -226,6 +226,19 @@ class EventLog(RichLog):
 
 
 class CommandTextArea(TextArea):
+    async def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
+        if event.key == "shift+enter":
+            await super()._on_key(event)
+            return
+        if event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            app = self.app
+            if hasattr(app, "_submit_command_input"):
+                app._submit_command_input()  # type: ignore[attr-defined]
+            return
+        await super()._on_key(event)
+
     def action_cursor_down(self, select: bool = False) -> None:  # type: ignore[override]
         if select:
             super().action_cursor_down(select)
@@ -1294,18 +1307,6 @@ class ParallelDeveloperApp(App):
             self.log_panel.log(message)
 
     def on_key(self, event: events.Key) -> None:
-        if (
-            self.command_input
-            and self.command_input.has_focus
-            and event.key == "enter"
-        ):
-            if event.shift:
-                event.stop()
-                self.command_input.insert("\n")
-                return
-            event.stop()
-            self._submit_command_input()
-            return
         if self._handle_text_shortcuts(event):
             return
         if self.command_palette and self.command_palette.display:
