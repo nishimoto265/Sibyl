@@ -294,6 +294,44 @@ def test_handle_escape_reverts_cycle(monkeypatch, tmp_path):
     assert tmux_called.get("pane") == "%0"
 
 
+def test_handle_escape_reverts_initial_cycle(monkeypatch, tmp_path):
+    events = []
+
+    def handler(event_type, payload):
+        events.append((event_type, payload))
+
+    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+    controller.broadcast_escape = lambda: None  # type: ignore[assignment]
+    controller._paused = True
+    controller._running = True
+    controller._cycle_history = []
+    controller._active_main_session_id = "session-main"
+    controller._last_selected_session = None
+
+    tmux_called = {}
+
+    class DummyTmux:
+        def promote_to_main(self, session_id, pane_id):
+            tmux_called["session"] = session_id
+            tmux_called["pane"] = pane_id
+
+        def launch_main_session(self, pane_id):
+            tmux_called["session"] = None
+            tmux_called["pane"] = pane_id
+
+    controller._last_tmux_manager = DummyTmux()
+    controller._tmux_list_panes = lambda: ["%0", "%1"]
+
+    controller.handle_escape()
+
+    assert controller._paused is False
+    assert controller._last_selected_session == "session-main"
+    assert controller._active_main_session_id == "session-main"
+    assert tmux_called.get("session") == "session-main"
+    assert tmux_called.get("pane") == "%0"
+    status_messages = [payload["message"] for event, payload in events if event == "status"]
+    assert status_messages and status_messages[-1] == "待機中"
+
 
 
 def test_paused_instruction_broadcast(monkeypatch, tmp_path):

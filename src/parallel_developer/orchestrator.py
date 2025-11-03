@@ -71,6 +71,7 @@ class Orchestrator:
         log_manager: Any,
         worker_count: int,
         session_name: str,
+        main_session_hook: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._tmux = tmux_manager
         self._worktree = worktree_manager
@@ -79,6 +80,10 @@ class Orchestrator:
         self._worker_count = worker_count
         self._session_name = session_name
         self._active_worker_sessions: List[str] = []
+        self._main_session_hook: Optional[Callable[[str], None]] = main_session_hook
+
+    def set_main_session_hook(self, hook: Optional[Callable[[str], None]]) -> None:
+        self._main_session_hook = hook
 
     def run_cycle(
         self,
@@ -282,6 +287,8 @@ class Orchestrator:
             pane_id=layout.main_pane,
             instruction=formatted_instruction,
         )
+        if self._main_session_hook:
+            self._main_session_hook(main_session_id)
         return main_session_id, formatted_instruction
 
     # --------------------------------------------------------------------- #

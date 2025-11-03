@@ -196,6 +196,7 @@ class CLIController:
         self._selection_context: Optional[SelectionContext] = None
         self._resume_options: List[SessionReference] = []
         self._last_selected_session: Optional[str] = None
+        self._active_main_session_id: Optional[str] = None
         self._paused: bool = False
         self._cycle_history: List[Dict[str, object]] = []
         self._cycle_counter: int = 0
@@ -466,18 +467,12 @@ class CLIController:
                 self._cancelled_cycles.add(current_id)
             self._current_cycle_id = None
             self._running = False
-        session_id = self._last_selected_session
-        tmux_manager = self._last_tmux_manager
-        if session_id and tmux_manager:
-            pane_ids = self._tmux_list_panes() or []
-            if pane_ids:
-                tmux_manager.promote_to_main(session_id=session_id, pane_id=pane_ids[0])
-            self._paused = False
-            self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻しました。"})
-            self._emit_status("待機中")
-            self._emit_pause_state()
-            self._perform_revert(silent=True)
-            return
+        self._paused = False
+        self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻しました。"})
+        self._emit_status("待機中")
+        self._emit_pause_state()
+        self._perform_revert(silent=True)
+        return
     def _tmux_list_panes(self) -> Optional[List[str]]:
         session_name = self._config.tmux_session
         try:
@@ -534,52 +529,48 @@ class CLIController:
         self._cycle_history.append(snapshot)
 
     def _perform_revert(self, silent: bool = False) -> None:
+        tmux_manager = self._last_tmux_manager
+        pane_ids = self._tmux_list_panes() or []
+        main_pane = pane_ids[0] if pane_ids else None
+
         if not self._cycle_history:
-            self._paused = False
-            if not silent:
-                self._emit("log", {"text": "巻き戻し可能なサイクルがありません。"})
-                self._emit_status("待機中")
-                self._emit_pause_state()
-            return
-        if len(self._cycle_history) == 1:
-            snapshot = self._cycle_history[0]
-            self._last_selected_session = snapshot.get("selected_session")
-            self._last_scoreboard = snapshot.get("scoreboard", {})
-            self._last_instruction = snapshot.get("instruction")
-            if self._last_scoreboard:
-                self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
-            self._paused = False
-            if not silent:
-                self._emit("log", {"text": "初回サイクルの完了状態へ戻りました。" })
-                self._emit_status("待機中")
-                self._emit_pause_state()
-            session_id = snapshot.get("selected_session")
-            tmux_manager = self._last_tmux_manager
-            if session_id and tmux_manager:
-                pane_ids = self._tmux_list_panes() or []
-                if pane_ids:
-                    tmux_manager.promote_to_main(session_id=session_id, pane_id=pane_ids[0])
-            return
-        self._cycle_history.pop()
-        snapshot = self._cycle_history[-1] if self._cycle_history else None
-        if snapshot:
-            self._last_selected_session = snapshot.get("selected_session")
-            self._last_scoreboard = snapshot.get("scoreboard", {})
-            self._last_instruction = snapshot.get("instruction")
-            if self._last_scoreboard:
-                self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
-        else:
-            self._last_selected_session = None
+            session_id = self._active_main_session_id
+            self._last_selected_session = session_id
+            self._active_main_session_id = session_id
             self._last_scoreboard = {}
             self._last_instruction = None
-        session_id = self._last_selected_session
-        tmux_manager = self._last_tmux_manager
-        if session_id and tmux_manager:
-            pane_ids = self._tmux_list_panes() or []
-            if pane_ids:
-                tmux_manager.promote_to_main(session_id=session_id, pane_id=pane_ids[0])
+            self._paused = False
+            if tmux_manager and main_pane:
+                if session_id:
+                    tmux_manager.promote_to_main(session_id=session_id, pane_id=main_pane)
+                else:
+                    tmux_manager.launch_main_session(pane_id=main_pane)
+            summary = session_id or "(未選択)"
+            if not silent:
+                self._emit("log", {"text": f"前回のセッションを再開しました。次の指示はセッション {summary} から再開します。"})
+                self._emit_status("待機中")
+                self._emit_pause_state()
+            return
+
+        self._cycle_history.pop()
+        snapshot = self._cycle_history[-1] if self._cycle_history else None
+        session_id = snapshot.get("selected_session") if snapshot else self._active_main_session_id
+
+        self._last_selected_session = session_id
+        self._active_main_session_id = session_id
+        self._last_scoreboard = snapshot.get("scoreboard", {}) if snapshot else {}
+        self._last_instruction = snapshot.get("instruction") if snapshot else None
+        if self._last_scoreboard:
+            self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+
         self._paused = False
-        summary = self._last_selected_session or "(未選択)"
+        if tmux_manager and main_pane:
+            if session_id:
+                tmux_manager.promote_to_main(session_id=session_id, pane_id=main_pane)
+            else:
+                tmux_manager.launch_main_session(pane_id=main_pane)
+
+        summary = session_id or "(未選択)"
         if not silent:
             self._emit("log", {"text": f"サイクルを巻き戻しました。次の指示はセッション {summary} から再開します。"})
             self._emit_status("待機中")
@@ -587,6 +578,11 @@ class CLIController:
 
     def _emit_pause_state(self) -> None:
         self._emit("pause_state", {"paused": self._paused})
+
+    def _on_main_session_started(self, session_id: str) -> None:
+        self._active_main_session_id = session_id
+        if self._last_selected_session is None:
+            self._last_selected_session = session_id
 
     async def _run_instruction(self, instruction: str) -> None:
         if self._running:
@@ -601,6 +597,7 @@ class CLIController:
         self._current_cycle_id = cycle_id
         self._running = True
         self._emit_status("メインセッションを準備中...")
+        self._active_main_session_id = None
 
         logs_dir = self._create_cycle_logs_dir()
 
@@ -612,6 +609,9 @@ class CLIController:
         )
         self._active_orchestrator = orchestrator
         self._last_tmux_manager = getattr(orchestrator, "_tmux", None)
+        main_hook = getattr(orchestrator, "set_main_session_hook", None)
+        if callable(main_hook):
+            main_hook(self._on_main_session_started)
 
         loop = asyncio.get_running_loop()
 
@@ -656,6 +656,7 @@ class CLIController:
                 self._last_scoreboard = dict(result.sessions_summary)
                 self._last_instruction = instruction
                 self._last_selected_session = result.selected_session
+                self._active_main_session_id = result.selected_session
                 self._config.reuse_existing_session = True
                 self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
                 self._emit("log", {"text": "指示が完了しました。"})
