@@ -24,7 +24,7 @@ from contextlib import suppress
 from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Footer, Header, Input, Log, OptionList, RichLog, Static
+from textual.widgets import Footer, Header, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 from textual.dom import NoScreen
 
@@ -185,14 +185,44 @@ class StatusPanel(Static):
         self.update("\n".join(lines))
 
 
-class EventLog(Log):
+class EventLog(RichLog):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, highlight=False, auto_scroll=True, **kwargs)
-        self.max_lines = None
+        super().__init__(*args, highlight=True, markup=True, **kwargs)
+        self.wrap = True
+        self.auto_scroll = True
+        self.min_width = 0
+        self._entries: List[str] = []
 
     def log(self, text: str) -> None:
         for line in text.splitlines():
-            self.write(f"{line}\n")
+            self._entries.append(line)
+            self._write_line(line)
+
+    def _write_line(self, line: str) -> None:
+        if self.markup:
+            renderable = Text.from_markup(line)
+        else:
+            renderable = Text(line)
+        renderable.no_wrap = False
+        renderable.overflow = "fold"
+        super().write(renderable)
+
+    def on_resize(self, event: events.Resize) -> None:
+        super().on_resize(event)
+        self._redraw()
+
+    def _redraw(self) -> None:
+        if not self._entries:
+            return
+        if not getattr(self, "_size_known", False):
+            return
+        super().clear()
+        for line in self._entries:
+            self._write_line(line)
+
+    @property
+    def entries(self) -> List[str]:
+        return list(self._entries)
 
 
 class CommandHint(Static):
@@ -1169,9 +1199,12 @@ class ParallelDeveloperApp(App):
                 text, ending = extracted
                 final_text = text if ending is None else f"{text}{ending}"
                 return final_text.rstrip("\n"), True
-        lines = list(self.log_panel.lines)
-        if lines and lines[-1] == "":
-            lines = lines[:-1]
+        if isinstance(self.log_panel, EventLog):
+            lines = self.log_panel.entries
+        else:
+            lines = list(getattr(self.log_panel, "lines", []))
+            if lines and lines[-1] == "":
+                lines = lines[:-1]
         text = "\n".join(line.rstrip() for line in lines).rstrip("\n")
         return text, False
 

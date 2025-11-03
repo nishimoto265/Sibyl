@@ -233,11 +233,11 @@
   notes: 長文ログも横スクロールなしで読みやすくなった
 - date: '2025-11-03'
   time_utc: '00:05:00'
-  summary: ログビューをRichLogからLogへ移行
+  summary: RichLogで再描画により折り返し対応
   details:
-  - TextualのRichLogが初期幅を保持して再ラップしない問題に対処するため、Logウィジェットへ切り替え
-  - 1行ごとに改行を付加して書き込み、/log copy・/log saveの出力が期待どおりになるよう矯正
+  - EventLogを拡張し、生ログを保持してリサイズ発生時にclear→再書き込みするパスを追加
+  - Text.wrapを有効化したTextを用いて出力することで、CLI幅に合わせた折り返しとログコピーの整合を確保
   reproduce:
   - uv run pytest
   result: tests 40 passed
-  notes: Logは選択範囲の抽出もサポートするため、コピー挙動に影響はない
+  notes: 選択コピーやステータス出力の挙動は従来通り
