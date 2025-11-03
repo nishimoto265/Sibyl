@@ -8,7 +8,7 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 import git
 import libtmux
@@ -338,6 +338,7 @@ class CodexMonitor:
             if codex_sessions_root is not None
             else Path.home() / ".codex" / "sessions"
         )
+        self._forced_done: Set[str] = set()
 
     def register_session(self, *, pane_id: str, session_id: str, rollout_path: Path) -> None:
         data = self._load_map()
@@ -520,6 +521,23 @@ class CodexMonitor:
 
         remaining = set(targets)
         completion: Dict[str, Any] = {}
+
+        forced = remaining.intersection(self._forced_done)
+        for session_id in list(forced):
+            path = targets[session_id]
+            try:
+                offset = path.stat().st_size
+            except OSError:
+                offset = 0
+            self._update_session_offset(session_id, offset)
+            completion[session_id] = {
+                "done": True,
+                "rollout_path": str(path),
+                "forced": True,
+            }
+            remaining.discard(session_id)
+            self._forced_done.discard(session_id)
+
         deadline = None if timeout_seconds is None else time.time() + timeout_seconds
 
         while remaining:
@@ -549,6 +567,11 @@ class CodexMonitor:
             }
 
         return completion
+
+    def force_completion(self, session_ids: Iterable[str]) -> None:
+        for session_id in session_ids:
+            if session_id:
+                self._forced_done.add(session_id)
 
     def _wait_for_new_rollouts(
         self,

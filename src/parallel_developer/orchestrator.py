@@ -78,6 +78,7 @@ class Orchestrator:
         self._log = log_manager
         self._worker_count = worker_count
         self._session_name = session_name
+        self._active_worker_sessions: List[str] = []
 
     def run_cycle(
         self,
@@ -106,6 +107,7 @@ class Orchestrator:
             main_session_id=main_session_id,
             baseline=baseline,
         )
+        self._active_worker_sessions = [session_id for session_id in fork_map.values() if session_id]
 
         completion_info = self._await_worker_completion(fork_map)
 
@@ -166,6 +168,7 @@ class Orchestrator:
             )
             artifact.log_paths = log_paths
             artifact.selected_session_id = main_session_id
+            self._active_worker_sessions = []
             return result
 
         decision, scoreboard = self._auto_or_select(
@@ -197,8 +200,15 @@ class Orchestrator:
             result=result,
         )
         artifact.log_paths = log_paths
+        self._active_worker_sessions = []
 
         return result
+
+    def force_complete_workers(self) -> int:
+        if not self._active_worker_sessions:
+            return 0
+        self._monitor.force_completion(self._active_worker_sessions)
+        return len(self._active_worker_sessions)
 
     # --------------------------------------------------------------------- #
     # Layout preparation

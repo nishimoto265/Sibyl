@@ -201,6 +201,7 @@ class CLIController:
         self._cycle_counter: int = 0
         self._current_cycle_id: Optional[int] = None
         self._cancelled_cycles: Set[int] = set()
+        self._active_orchestrator: Optional[Orchestrator] = None
         self._attach_manager = TmuxAttachManager()
         self._settings_path = Path(settings_path) if settings_path else (self._worktree_root / ".parallel-dev" / "settings.json")
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -319,7 +320,14 @@ class CLIController:
             return
 
         if name == "/done":
-            await self._send_done_to_workers()
+            if self._active_orchestrator:
+                count = self._active_orchestrator.force_complete_workers()
+                if count:
+                    self._emit("log", {"text": f"/done を検知として扱い、{count} ワーカーを完了済みに設定しました。"})
+                else:
+                    self._emit("log", {"text": "完了扱いにするワーカーセッションが見つかりませんでした。"})
+            else:
+                self._emit("log", {"text": "現在進行中のワーカークセッションがないため /done を適用できません。"})
             return
 
         if name == "/attach":
@@ -500,21 +508,6 @@ class CLIController:
         self._emit_pause_state()
         self._emit_status("待機中")
 
-    async def _send_done_to_workers(self) -> None:
-        pane_ids = self._tmux_list_panes()
-        if pane_ids is None:
-            return
-        if len(pane_ids) <= 2:
-            self._emit("log", {"text": "ワーカーペインが見つからず、/done を送信できませんでした。"})
-            return
-        worker_panes = pane_ids[2:]
-        for pane_id in worker_panes:
-            subprocess.run(
-                ["tmux", "send-keys", "-t", pane_id, "/done", "Enter"],
-                check=False,
-            )
-        self._emit("log", {"text": f"/done を {len(worker_panes)} ワーカーペインへ送信しました。"})
-
     def _record_cycle_snapshot(self, result: OrchestrationResult, cycle_id: int) -> None:
         snapshot = {
             "cycle_id": cycle_id,
@@ -574,6 +567,7 @@ class CLIController:
             session_name=self._config.tmux_session,
             reuse_existing_session=self._config.reuse_existing_session,
         )
+        self._active_orchestrator = orchestrator
 
         loop = asyncio.get_running_loop()
 
@@ -640,6 +634,8 @@ class CLIController:
                     await auto_attach_task
                 except Exception:  # pragma: no cover - logging handled inside
                     self._emit("log", {"text": "[auto] tmuxへの接続処理でエラーが発生しました。"})
+            if self._active_orchestrator is orchestrator:
+                self._active_orchestrator = None
 
     def _resolve_selection(self, index: int) -> None:
         if not self._selection_context:
