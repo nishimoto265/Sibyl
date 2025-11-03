@@ -188,6 +188,8 @@ class StatusPanel(Static):
 class EventLog(RichLog):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, highlight=True, markup=True, **kwargs)
+        self.wrap = True
+        self.auto_scroll = True
 
     def log(self, text: str) -> None:
         for line in text.splitlines():
@@ -906,6 +908,7 @@ class ParallelDeveloperApp(App):
         height: 1fr;
         border: round $accent;
         margin-bottom: 1;
+        overflow-x: hidden;
     }
 
     #status {

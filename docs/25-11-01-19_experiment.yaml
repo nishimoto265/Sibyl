@@ -169,3 +169,13 @@
   - uv run pytest
   result: tests 38 passed
   notes: 実行環境ではマウス選択後にcmd/ctrl+shift+cでコピー可能、cmd+cは端末依存のため要確認
+- date: '2025-11-02'
+  time_utc: '23:10:00'
+  summary: ログビューを折り返し表示に統一
+  details:
+  - EventLogでwrapを有効化し、CLIの横幅に合わせて自動改行されるよう調整
+  - #logスタイルにoverflow-x: hiddenを適用し、横スクロールを無効化して縦方向の移動に限定
+  reproduce:
+  - uv run pytest
+  result: tests 40 passed
+  notes: 長文ログも横スクロールなしで読みやすくなった
