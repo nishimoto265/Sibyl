@@ -235,6 +235,9 @@ def test_controller_broadcast_escape(monkeypatch, tmp_path):
     assert recorded[0] == expected_prefix
     assert ["tmux", "send-keys", "-t", "%0", "Escape"] in recorded
     assert ["tmux", "send-keys", "-t", "%1", "Escape"] in recorded
+    logs = [payload["text"] for event, payload in events if event == "log"]
+    assert f"tmuxセッション {controller._config.tmux_session} の 2 個のペインへEscapeを送信しました。" in logs
+
 
 def test_attach_auto_mode_skips_when_already_attached(monkeypatch, manifest_store, tmp_path):
     events = []

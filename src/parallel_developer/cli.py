@@ -426,11 +426,16 @@ class CLIController:
             return
 
         pane_ids = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+        if not pane_ids:
+            self._emit("log", {"text": f"tmuxセッション {session_name} にペインが見つかりませんでした。"})
+            return
+
         for pane_id in pane_ids:
             subprocess.run(
                 ["tmux", "send-keys", "-t", pane_id, "Escape"],
                 check=False,
             )
+        self._emit("log", {"text": f"tmuxセッション {session_name} の {len(pane_ids)} 個のペインへEscapeを送信しました。"})
 
     async def _run_instruction(self, instruction: str) -> None:
         if self._running:
