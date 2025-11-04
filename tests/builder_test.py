@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from parallel_developer import cli
+from parallel_developer import controller
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +25,7 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
         return tmux
 
     monkeypatch.setattr(
-        "parallel_developer.cli.TmuxLayoutManager",
+        "parallel_developer.controller.TmuxLayoutManager",
         fake_tmux,
     )
 
@@ -34,7 +34,7 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
         return worktree
 
     monkeypatch.setattr(
-        "parallel_developer.cli.WorktreeManager", fake_worktree
+        "parallel_developer.controller.WorktreeManager", fake_worktree
     )
 
     def fake_monitor(**kwargs):
@@ -42,20 +42,20 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
         return monitor
 
     monkeypatch.setattr(
-        "parallel_developer.cli.CodexMonitor",
+        "parallel_developer.controller.CodexMonitor",
         fake_monitor,
     )
-    monkeypatch.setattr("parallel_developer.cli.LogManager", lambda **_: log_manager)
+    monkeypatch.setattr("parallel_developer.controller.LogManager", lambda **_: log_manager)
     def fake_orchestrator(**kwargs):
         assert kwargs["boss_mode"].value == "score"
         return orchestrator_instance
 
     monkeypatch.setattr(
-        "parallel_developer.cli.Orchestrator",
+        "parallel_developer.controller.Orchestrator",
         fake_orchestrator,
     )
 
-    result = cli.build_orchestrator(worker_count=3, log_dir=None, session_namespace="namespace", codex_home=Path("codex-home"))
+    result = controller.build_orchestrator(worker_count=3, log_dir=None, session_namespace="namespace", codex_home=Path("codex-home"))
 
     assert result is orchestrator_instance
     tmux.ensure_layout.assert_not_called()

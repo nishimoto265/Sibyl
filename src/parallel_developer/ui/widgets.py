@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from rich.text import Text
 from textual import events
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import OptionList, RichLog, Static, TextArea
+
+if TYPE_CHECKING:
+    from parallel_developer.controller import SessionConfig
 
 __all__ = [
     "PaletteItem",

@@ -3,13 +3,8 @@ import pytest
 from textual import events
 from textual.widgets import OptionList
 
-from parallel_developer.cli import (
-    CommandPalette,
-    ControllerEvent,
-    EventLog,
-    CommandTextArea,
-    ParallelDeveloperApp,
-)
+from parallel_developer.cli import ParallelDeveloperApp
+from parallel_developer.ui.widgets import CommandPalette, ControllerEvent, EventLog, CommandTextArea
 
 
 @pytest.mark.asyncio

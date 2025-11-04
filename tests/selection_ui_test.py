@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from parallel_developer.cli import ControllerEvent, ParallelDeveloperApp
+from parallel_developer.cli import ParallelDeveloperApp
+from parallel_developer.ui.widgets import ControllerEvent
 
 
 class DummySelectionList:

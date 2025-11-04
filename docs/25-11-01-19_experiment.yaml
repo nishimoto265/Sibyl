@@ -239,3 +239,15 @@
   - uv run pytest
   result: tests 63 passed
   notes: 複数 pdev を並行起動しても互いのworktreeとCodexロールアウトが干渉しない構成へ移行
+- date: '2025-11-04'
+  time_utc: '11:50:00'
+  summary: CLIロジックをcontroller/uiモジュールへ分割しrewriteフローを2段階化
+  details:
+  - `parallel_developer/controller.py` を新設し、CLIController・設定管理・tmuxアタッチ・build_orchestratorをUIから切り離した
+  - Textualコンポーネントを `parallel_developer/ui/widgets.py` へ移動し、CLIはUIとcontrollerの橋渡しに専念
+  - `/boss rewrite` がJSONスコア生成後に自動で統合フェーズ用プロンプトを送信するよう変更し、フォローアップ送信のテストを追加
+  - 既存テストをcontroller/ui構成に合わせて更新し、全73テストが通過することを確認
+  reproduce:
+  - uv run pytest
+  result: tests 73 passed
+  notes: UIとワークフローの依存境界が明確になり、今後の拡張や分割テストが容易になった
