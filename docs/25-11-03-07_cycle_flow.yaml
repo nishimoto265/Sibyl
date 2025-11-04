@@ -29,6 +29,7 @@ weekly_flow:
       - "25. 新しいrolloutからワーカーのセッションIDを取得する。"
       - "26. ワーカーセッションIDをpane情報と紐づける。"
       - "27. 監視処理が全ワーカーの `/done` を検知するまで待機する。"
+      - "27a. ワーカー完了時に `/continue` を送ればステップ20〜27を再実行でき、`/done` を送れば次工程へ進む。"
       - "28. ワーカー完了ステータスをログへ書き出す。"
       - "29. Bossペインに Ctrl+C を送信して待機状態にする。"
       - "30. Bossペインに `codex resume <main-id>` を送信する。"
@@ -64,3 +65,9 @@ esc_behavior:
     - "ESCを1回押すとCLIControllerが一時停止モードへ入り、全ペインへEscapeをブロードキャストしてCodex入力を中断させる。"
     - "一時停止中に再度ESCを押すと直前に採択された `_last_selected_session` をメインに戻し、進行中サイクルをキャンセルする。"
     - "巻き戻し後に再開する際はステップ15から同じ手順（Ctrl+C×2 → `codex resume <_last_selected_session>` → `/done`付き指示投入）を繰り返す。"
+
+continue_behavior:
+  description: "ワーカー完了後の分岐"
+  rules:
+    - "ワーカーが `/done` を返した直後は `/continue` でステップ20〜27へ戻り追加作業を指示できる。"
+    - "同じ場面で `/done` を送ると従来どおりBoss評価（ステップ28以降）へ進む。"
