@@ -318,3 +318,15 @@
   - uv run pytest
   result: tests 53 passed
   notes: ESC二度押し後も指示が詰まらず、直前サイクルの状態へ即時巻き戻り可能
+- date: '2025-11-04'
+  time_utc: '10:46:00'
+  summary: 複数 pdev 同時起動時の共有リソース競合を調査
+  details:
+  - WorktreeManager.prepare が `.parallel-dev/worktrees/worker-*` を常に再生成するため、2本目の pdev が既存ワークツリーの変更ファイルを強制削除する挙動を確認
+  - CodexMonitor.register_new_rollout が共有 `.codex/sessions` を基準にロールアウト検出しており、別CLIの新規セッションを誤って取得する再現スクリプトを作成
+  - ManifestStore や `.parallel-dev/settings.json` などのグローバル設定が排他制御なしで上書きされる設計リスクを洗い出し
+  reproduce:
+  - uv run python - <<'PY'  # WorktreeManager 再生成によるファイル消失を確認
+  - uv run python - <<'PY'  # CodexMonitor が同一ロールアウトIDを重複検出することを確認
+  result: 手動検証で双方のシナリオが再現し、複数起動時は競合が避けられないことを確認
+  notes: 同時稼働を許容するにはワークツリーとセッション検知をセッションIDごとに分離し、設定ファイルへの書き込みも排他制御を導入する必要がある
