@@ -319,5 +319,5 @@ def test_boss_instruction_rewrite_mode():
 
     text = orchestrator._build_boss_instruction(["worker-1", "worker-2"], "Implement feature X")
     assert "For each candidate" in text
-    assert "After outputting the JSON" in text
-    assert "refactor" in text.lower() or "再実装" in text
+    assert "After you emit the JSON scoreboard" in text
+    assert "respond with /done" in text.lower()

@@ -639,9 +639,9 @@ class Orchestrator:
             return (
                 "Boss evaluation and rewrite phase:\n"
                 f"{base}"
-                "After outputting the JSON scoreboard, continue working in this boss workspace to deliver the final merged implementation.\n"
-                "Refactor or combine the strongest worker contributions. If one worker solution is already perfect, copy that worker's result into this boss workspace instead of rewriting.\n"
-                "Document key integration decisions in the log, ensure tests are updated if necessary, and then respond with /done when the boss implementation is complete."
+                "After you emit the JSON scoreboard, stay in this boss workspace and produce the final merged implementation.\n"
+                "Refactor or combine the strongest worker contributions. If one worker result is already ideal, copy it into this boss workspace instead of rewriting from scratch.\n"
+                "When the boss implementation is complete, respond with /done."
             )
         return (
             "Boss evaluation phase:\n"
