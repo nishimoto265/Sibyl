@@ -1439,8 +1439,6 @@ class ParallelDeveloperApp(App):
         if not suggestions:
             self._hide_command_palette()
             return
-        if self.command_input:
-            self._set_command_text(prefix)
         items = [PaletteItem(f"{s.name:<10} {s.description}", s.name) for s in suggestions]
         self._show_command_palette(items, mode="command")
 
@@ -1529,13 +1527,6 @@ class ParallelDeveloperApp(App):
             return
         if self._handle_text_shortcuts(event):
             return
-        if self.command_palette and self.command_palette.display:
-            if event.key in {"down", "j"}:
-                self.command_palette.move_next()
-                event.stop()
-            elif event.key in {"up", "k"}:
-                self.command_palette.move_previous()
-                event.stop()
 
     def _handle_text_shortcuts(self, event: events.Key) -> bool:
         shortcuts_select_all = {

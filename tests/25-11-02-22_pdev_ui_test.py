@@ -148,6 +148,36 @@ async def test_ctrl_c_double_press_exits() -> None:
 
 
 @pytest.mark.asyncio
+async def test_slash_typing_preserves_order() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        await pilot.press("/")
+        await pilot.press("s")
+        await pilot.press("a")
+        await pilot.pause()
+        command_input = app.query_one("#command", CommandTextArea)
+        assert command_input.text == "/sa"
+
+
+@pytest.mark.asyncio
+async def test_command_palette_arrow_moves_once() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        await pilot.press("/")
+        await pilot.pause()
+        palette = app.query_one("#command-palette", CommandPalette)
+        initial_index = palette._active_index
+        await pilot.press("down")
+        await pilot.pause()
+        assert palette._active_index == initial_index + 1
+        await pilot.press("up")
+        await pilot.pause()
+        assert palette._active_index == initial_index
+
+
+@pytest.mark.asyncio
 async def test_log_command_save(tmp_path) -> None:
     app = ParallelDeveloperApp()
     async with app.run_test() as pilot:  # type: ignore[attr-defined]
