@@ -352,7 +352,8 @@
   - `parallel_developer/controller.py` を新設し、CLIController・設定管理・tmuxアタッチ・build_orchestratorをUIから切り離した
   - Textualコンポーネントを `parallel_developer/ui/widgets.py` へ移動し、CLIはUIとcontrollerの橋渡しに専念
   - `/boss rewrite` がJSONスコア生成後に自動で統合フェーズ用プロンプトを送信するよう変更し、フォローアップ送信のテストを追加
-  - 既存テストをcontroller/ui構成に合わせて更新し、全73テストが通過することを確認
+  - SettingsStoreとCommandSpecEntryでコマンド/設定処理をモジュール化し、WorkflowManagerで指示実行フローを分離
+  - 既存テストを新構成に合わせて更新し、全73テストが通過することを確認
   reproduce:
   - uv run pytest
   result: tests 73 passed
