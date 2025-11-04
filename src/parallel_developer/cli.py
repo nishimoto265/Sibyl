@@ -1341,7 +1341,6 @@ class ParallelDeveloperApp(App):
             if callable(cursor_reset):
                 cursor_reset()
         self.controller.history_reset()
-        self._notify_status("Ctrl+C をもう一度押すと終了します。", also_log=False)
         return True
 
     def _render_scoreboard(self, scoreboard: Dict[str, Dict[str, object]]) -> None:
