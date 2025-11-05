@@ -604,25 +604,31 @@ class CodexMonitor:
         remaining = set(targets)
         completion: Dict[str, Any] = {}
 
-        forced = remaining.intersection(self._forced_done)
-        for session_id in list(forced):
-            path = targets[session_id]
-            try:
-                offset = path.stat().st_size
-            except OSError:
-                offset = 0
-            self._update_session_offset(session_id, offset)
-            completion[session_id] = {
-                "done": True,
-                "rollout_path": str(path),
-                "forced": True,
-            }
-            remaining.discard(session_id)
-            self._forced_done.discard(session_id)
+        def consume_forced() -> None:
+            forced_now = remaining.intersection(self._forced_done)
+            for session_id in list(forced_now):
+                path = targets[session_id]
+                try:
+                    offset = path.stat().st_size
+                except OSError:
+                    offset = 0
+                offsets[session_id] = offset
+                self._update_session_offset(session_id, offset)
+                completion[session_id] = {
+                    "done": True,
+                    "rollout_path": str(path),
+                    "forced": True,
+                }
+                remaining.discard(session_id)
+                self._forced_done.discard(session_id)
 
+        consume_forced()
         deadline = None if timeout_seconds is None else time.time() + timeout_seconds
 
         while remaining:
+            consume_forced()
+            if not remaining:
+                break
             for session_id in list(remaining):
                 rollout_path = targets[session_id]
                 done, new_offset = self._contains_done(

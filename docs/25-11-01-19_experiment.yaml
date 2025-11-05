@@ -287,3 +287,14 @@
   - uv run pytest
   result: tests 87 passed
   notes: tmux 3.x 系を前提にしつつ、古いバージョンでコマンド失敗しても処理継続できるよう例外を無視するガードを追加
+- date: '2025-11-05'
+  time_utc: '05:25:00'
+  summary: /done コマンドでBossフェーズへ進まない問題を修正
+  details:
+  - CodexMonitor.await_completionでforce_completionをループ毎に評価するようリファクタし、待機中に追加された強制完了フラグを即時反映
+  - 強制完了が適用された際にrolloutオフセットを更新し、完了情報へ`forced: true`を付与してログに残すよう統一
+  - モニターテストにforce_completionを遅延呼び出しするケースを追加し、timeout前に強制完了が検知されることを検証
+  reproduce:
+  - uv run pytest
+  result: tests 88 passed
+  notes: CLIで /done 実行後すぐにBossフェーズへ遷移することを手動でも再確認

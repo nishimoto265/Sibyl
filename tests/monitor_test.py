@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -106,6 +107,29 @@ def test_monitor_waits_for_done(tmp_path: Path):
     completion = monitor.await_completion(session_ids=["session-a", "session-b"], timeout_seconds=0.1)
     assert completion["session-a"]["done"] is True
     assert completion["session-b"]["done"] is True
+
+
+def test_monitor_force_completion_during_wait(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=tmp_path / "codex",
+        poll_interval=0.01,
+    )
+
+    rollout = tmp_path / "sessions" / "rollout-force.jsonl"
+    rollout.write_text("", encoding="utf-8")
+    monitor.register_session(pane_id="pane-force", session_id="session-force", rollout_path=rollout)
+
+    def trigger_force():
+        time.sleep(0.02)
+        monitor.force_completion(["session-force"])
+
+    threading.Thread(target=trigger_force, daemon=True).start()
+    completion = monitor.await_completion(session_ids=["session-force"], timeout_seconds=0.2)
+    assert completion["session-force"]["done"] is True
+    assert completion["session-force"].get("forced") is True
 
 
 def test_monitor_detects_new_sessions(tmp_path: Path):
