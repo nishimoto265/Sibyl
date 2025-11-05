@@ -320,15 +320,3 @@
   - uv run pytest
   result: tests 89 passed
   notes: 04:45対応のEnterブロードキャストは撤回。フォーク後は従来通りワーカーが手動でEnter入力して指示を送信する運用に戻した
-- date: '2025-11-05'
-  time_utc: '06:35:00'
-  summary: Codex resumeがセッションを見つけられない問題を調査し、CODEX_HOMEを設定
-  details:
-  - codex-home配下の`codex-tui.log`で"Error finding conversation path"が出ていることから、Codex CLIが履歴ディレクトリを解決できていないと判明
-  - TmuxLayoutManager._codex_commandで`CODEX_HOME=<codex-home>/.codex`を明示的に付与するよう変更し、resume時に正しいセッションディレクトリを参照させた
-  - tmuxマネージャテストを更新し、HOMEとCODEX_HOMEの両方がコマンドに含まれることを検証
-  - 調査用にforkコマンドを`logs/fork_debug.jsonl`へ書き出す簡易ログを追加
-  reproduce:
-  - uv run pytest
-  result: tests 89 passed
-  notes: CODEX_HOME指定により`codex resume`が会話ファイルを解決できるようになることを想定。実環境で再度サイクルを回し、エラーが解消するか要確認
