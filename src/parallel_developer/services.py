@@ -654,6 +654,39 @@ class CodexMonitor:
             if session_id:
                 self._forced_done.add(session_id)
 
+    def wait_for_rollout_activity(
+        self,
+        session_id: str,
+        *,
+        min_bytes: int = 1,
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        data = self._load_map()
+        sessions = data.get("sessions", {})
+        entry = sessions.get(session_id)
+        if entry is None:
+            return
+        rollout_path = Path(entry.get("rollout_path", ""))
+        baseline = int(entry.get("offset", 0))
+        deadline = time.time() + timeout_seconds
+        last_size = baseline
+
+        while time.time() < deadline:
+            try:
+                size = rollout_path.stat().st_size
+            except OSError:
+                size = last_size
+
+            if size >= baseline + min_bytes:
+                self._update_session_offset(session_id, size)
+                return
+
+            last_size = size
+            time.sleep(self.poll_interval)
+
+        if last_size > baseline:
+            self._update_session_offset(session_id, last_size)
+
     def _wait_for_new_rollouts(
         self,
         baseline: Mapping[Path, float],

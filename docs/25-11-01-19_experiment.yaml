@@ -315,6 +315,7 @@
   - Orchestratorでfork後に`tmux.send_instruction_to_workers`を呼び出す処理を削除し、既存セッション履歴に残った指示のみを利用するよう戻した
   - TmuxLayoutManager.fork_workersから空行Enter送出を取り除き、resume直後に指示が自動送信されて消える回帰を解消
   - 付随するユニットテストを更新し、自動送信用のMock呼び出しが発生しないことと空のEnterが送出されないことを検証
+  - CodexMonitorに `wait_for_rollout_activity` を追加し、メイン指示がロールアウトへ反映されるまでCtrl+Cしないよう調整
   reproduce:
   - uv run pytest
   result: tests 89 passed

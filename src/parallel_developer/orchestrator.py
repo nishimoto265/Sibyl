@@ -325,6 +325,10 @@ class Orchestrator:
             pane_id=layout.main_pane,
             instruction=formatted_instruction,
         )
+        self._monitor.wait_for_rollout_activity(
+            main_session_id,
+            timeout_seconds=10.0,
+        )
         self._tmux.interrupt_pane(pane_id=layout.main_pane)
         self._monitor.capture_instruction(
             pane_id=layout.main_pane,
