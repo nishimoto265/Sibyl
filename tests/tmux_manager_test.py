@@ -130,6 +130,9 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     assert worker_pane.sent.count(("C-c", False)) >= 2
     assert worker_pane.sent.count(("C-[", False)) >= 2
     assert worker_pane.sent.count(("", True)) >= 1
+    other_worker_pane = monkeypatch_server.sessions[0].windows[0].panes[3]
+    assert other_worker_pane.sent.count(("C-[", False)) >= 2
+    assert other_worker_pane.sent.count(("", True)) >= 1
     assert main_pane.sent[-1] == ("env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex resume session-worker-1", True)
 
     boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]

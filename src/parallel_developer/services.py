@@ -148,14 +148,10 @@ class TmuxLayoutManager:
             )
             self._send_command(pane_id, command)
         self._maybe_wait()
-        for pane_id in worker_list:
-            pane = self._get_pane(pane_id)
-            pane.send_keys("C-[", enter=False)
-            time.sleep(self.backtrack_delay)
-            pane.send_keys("C-[", enter=False)
-            time.sleep(self.backtrack_delay)
-            pane.send_keys("", enter=True)
-            time.sleep(self.backtrack_delay)
+        if worker_list:
+            self._broadcast_keys(worker_list, "C-[", enter=False)
+            self._broadcast_keys(worker_list, "C-[", enter=False)
+            self._broadcast_keys(worker_list, "", enter=True)
         self._maybe_wait()
         return worker_list
 
@@ -167,11 +163,10 @@ class TmuxLayoutManager:
             self._send_text(pane_id, instruction)
 
     def confirm_workers(self, fork_map: Mapping[str, str]) -> None:
-        for pane_id in fork_map:
-            pane = self._get_pane(pane_id)
-            pane.send_keys("", enter=True)
-            if self.backtrack_delay > 0:
-                time.sleep(self.backtrack_delay)
+        pane_ids = list(fork_map)
+        if not pane_ids:
+            return
+        self._broadcast_keys(pane_ids, "", enter=True)
 
     def prepare_for_instruction(self, *, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
@@ -241,6 +236,13 @@ class TmuxLayoutManager:
             home = shlex.quote(str(self.codex_home))
             return f"env HOME={home} {command}"
         return command
+
+    def _broadcast_keys(self, pane_ids: Sequence[str], key: str, *, enter: bool) -> None:
+        for pane_id in pane_ids:
+            pane = self._get_pane(pane_id)
+            pane.send_keys(key, enter=enter)
+        if self.backtrack_delay > 0:
+            time.sleep(self.backtrack_delay)
 
 
 class WorktreeManager:

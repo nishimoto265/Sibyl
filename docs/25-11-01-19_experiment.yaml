@@ -263,3 +263,15 @@
   - uv run pytest
   result: tests 87 passed
   notes: tmux側でEnterのみ送信していたため指示が残らないケースが判明。指示本文を再送することで既存フローと整合
+- date: '2025-11-05'
+  time_utc: '04:45:00'
+  summary: ワーカー起動時のキー入力を一括送信して待機時間を短縮
+  details:
+  - TmuxLayoutManager.fork_workersでEsc×2→Enterの送信を各ペイン個別ではなくブロードキャスト化し、backtrack_delayの適用をワーカー単位からステップ単位に変更
+  - confirm_workersでもEnter送信を一括化し、ワーカー数に比例していた待機時間を削減
+  - tmuxマネージャテストを更新し、全ワーカーにキー列が配布されることを検証
+  - `uv run pytest` で高速化後も全テストが通過することを確認
+  reproduce:
+  - uv run pytest
+  result: tests 87 passed
+  notes: backtrack_delayを維持しつつステップ毎のsleepへ変更したことで、安定性を保ちながら体感レスポンスを改善
