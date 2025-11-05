@@ -252,3 +252,14 @@
   - uv run pytest
   result: tests 73 passed
   notes: UIとワークフローの依存境界が明確になり、今後の拡張や分割テストが容易になった
+- date: '2025-11-05'
+  time_utc: '04:20:00'
+  summary: ワーカー再開時に指示が消える回帰を修正
+  details:
+  - Orchestrator.run_cycle内でfork後に`tmux.send_instruction_to_workers`を呼び出すよう変更し、各workerへ最新指示を再送するよう統一
+  - `tests/orchestrator_test.py` にワーカー指示送信を検証するアサーションを追加し、回帰テストを先行作成
+  - `uv run pytest` で87件すべてのテストが通過することを確認し、worker指示が即時実行されることを手動で再現
+  reproduce:
+  - uv run pytest
+  result: tests 87 passed
+  notes: tmux側でEnterのみ送信していたため指示が残らないケースが判明。指示本文を再送することで既存フローと整合

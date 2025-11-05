@@ -138,6 +138,11 @@ def test_orchestrator_runs_happy_path(dependencies):
         base_session_id="session-main",
         pane_paths=expected_worker_paths,
     )
+    tmux.send_instruction_to_workers.assert_called_once()
+    worker_instruction_call = tmux.send_instruction_to_workers.call_args
+    assert worker_instruction_call.kwargs["fork_map"] == dependencies["fork_map"]
+    assert dependencies["instruction"] in worker_instruction_call.kwargs["instruction"]
+    assert "/done" in worker_instruction_call.kwargs["instruction"]
     monitor.register_worker_rollouts.assert_called_once()
     tmux.confirm_workers.assert_called_once_with(dependencies["fork_map"])
     tmux.fork_boss.assert_called_once_with(
