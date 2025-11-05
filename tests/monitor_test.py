@@ -27,6 +27,9 @@ def test_monitor_registers_and_logs_instruction(tmp_path: Path):
         rollout_path=rollout,
     )
 
+    bridge_path = tmp_path / "codex" / "bridge" / "session-main.jsonl"
+    assert bridge_path.exists()
+
     session_id = monitor.capture_instruction(pane_id="pane-main", instruction="Build feature")
     assert session_id == "session-main"
 
@@ -78,6 +81,10 @@ def test_monitor_waits_for_done(tmp_path: Path):
 
     monitor.register_session(pane_id="pane-a", session_id="session-a", rollout_path=rollout_a)
     monitor.register_session(pane_id="pane-b", session_id="session-b", rollout_path=rollout_b)
+
+    bridge_dir = tmp_path / "codex" / "bridge"
+    assert (bridge_dir / "session-a.jsonl").exists()
+    assert (bridge_dir / "session-b.jsonl").exists()
 
     completion = monitor.await_completion(session_ids=["session-a", "session-b"], timeout_seconds=0.05)
     assert completion["session-a"]["done"] is False
