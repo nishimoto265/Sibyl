@@ -298,3 +298,13 @@
   - uv run pytest
   result: tests 88 passed
   notes: CLIで /done 実行後すぐにBossフェーズへ遷移することを手動でも再確認
+- date: '2025-11-05'
+  time_utc: '05:40:00'
+  summary: コマンド履歴呼び出し時にTextAreaでクラッシュする問題を修正
+  details:
+  - CommandTextAreaにaction_cursor_endを実装し、履歴呼び出し後にカーソルを末尾へ移動できるよう整備
+  - UIテストにカーソル移動の検証ケースを追加し、`action_cursor_end`が既存のTextual APIと整合することを確認
+  reproduce:
+  - uv run pytest
+  result: tests 89 passed
+  notes: 上キー操作で落ちなくなったことを手動確認。Textual内部仕様変更に備えてdoc.get_line取得時は例外を無視するガードを追加

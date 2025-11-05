@@ -189,6 +189,19 @@ async def test_command_palette_arrow_moves_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_command_input_cursor_end_moves_to_last_character() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        command_input = app.query_one("#command", CommandTextArea)
+        command_input.text = "first line\nsecond"
+        command_input.cursor_location = (0, 0)
+        command_input.action_cursor_end()
+        await pilot.pause()
+        assert command_input.cursor_location == (1, 6)
+
+
+@pytest.mark.asyncio
 async def test_log_command_save(tmp_path) -> None:
     app = ParallelDeveloperApp()
     async with app.run_test() as pilot:  # type: ignore[attr-defined]

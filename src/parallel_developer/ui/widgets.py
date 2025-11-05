@@ -156,6 +156,24 @@ class CommandTextArea(TextArea):
             return
         super().action_cursor_up(select)
 
+    def action_cursor_end(self, select: bool = False) -> None:  # type: ignore[override]
+        doc = getattr(self, "document", None)
+        if doc is None:
+            self.move_cursor((0, 0), select=select)
+            return
+        line_count = getattr(doc, "line_count", 0)
+        if line_count <= 0:
+            self.move_cursor((0, 0), select=select)
+            return
+        last_row = line_count - 1
+        try:
+            last_line = doc.get_line(last_row)
+            last_col = len(last_line)
+        except Exception:  # pragma: no cover - document API should not fail
+            last_row, last_col = 0, 0
+        self.move_cursor((last_row, last_col), select=select)
+        self.scroll_cursor_visible()
+
 
 class CommandHint(Static):
     def update_hint(self, paused: bool = False) -> None:
