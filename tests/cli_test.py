@@ -714,10 +714,28 @@ def test_boss_command_rejects_invalid_option(tmp_path):
     def handler(event_type, payload):
         events.append((event_type, payload))
 
-    controller = CLIController(event_handler=handler, worktree_root=tmp_path)
+    class DummyOrchestrator:
+        def __init__(self):
+            self._tmux = Mock()
+            self._worktree = Mock()
+
+        def run_cycle(self, instruction, selector, resume_session_id=None):
+            return OrchestrationResult(selected_session="session-x", sessions_summary={})
+
+        def set_main_session_hook(self, hook):  # pragma: no cover - trivial
+            self._hook = hook
+
+        def set_worker_decider(self, decider):  # pragma: no cover - trivial
+            self._decider = decider
+
+    controller = CLIController(
+        event_handler=handler,
+        worktree_root=tmp_path,
+        orchestrator_builder=lambda **_: DummyOrchestrator(),
+    )
     _run_async(controller.handle_input("/boss invalid"))
     log_messages = [payload.get("text", "") for event, payload in events if event == "log"]
-    assert any("使い方" in msg for msg in log_messages)
+    assert not any("使い方" in msg for msg in log_messages)
 
 
 def test_tmux_attach_manager_is_attached(monkeypatch):

@@ -397,15 +397,16 @@ class CLIController:
                 },
             )
             return
-        value = str(option).lower()
+        value = str(option).strip()
         mapping = {
             "skip": BossMode.SKIP,
             "score": BossMode.SCORE,
             "rewrite": BossMode.REWRITE,
         }
-        new_mode = mapping.get(value)
+        new_mode = mapping.get(value.lower())
         if new_mode is None:
-            self._emit("log", {"text": "使い方: /boss skip | /boss score | /boss rewrite"})
+            # Treat unknown arguments as regular instructions for compatibility
+            await self.handle_input(f"{value}")
             return
         if new_mode == self._config.boss_mode:
             self._emit("log", {"text": f"Boss モードは既に {new_mode.value} です。"})
@@ -1121,6 +1122,9 @@ class CLIController:
         log_dir: Optional[Path],
         session_name: Optional[str] = None,
         reuse_existing_session: bool = False,
+        session_namespace: Optional[str] = None,
+        codex_home: Optional[Path] = None,
+        boss_mode: BossMode = BossMode.SCORE,
     ) -> Orchestrator:
         raise RuntimeError("Orchestrator builder is not configured.")
 
