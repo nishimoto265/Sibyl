@@ -122,7 +122,6 @@ def test_handle_instruction_runs_builder_and_saves_manifest(manifest_store, tmp_
     assert captured_kwargs["worker_count"] == controller._config.worker_count
     assert captured_kwargs["session_name"] == controller._config.tmux_session
     assert "codex_home" not in captured_kwargs
-    assert captured_kwargs["instruction_settle_delay"] == 0.0
     sessions = manifest_store.list_sessions()
     assert len(sessions) == 1
     manifest = manifest_store.load_manifest(sessions[0].session_id)
@@ -574,7 +573,6 @@ def test_boss_command_updates_mode(monkeypatch, manifest_store, tmp_path):
     assert controller._config.boss_mode == BossMode.REWRITE
     _run_async(controller.handle_input("Implement feature"))
     assert captured_kwargs["boss_mode"] == BossMode.REWRITE
-    assert captured_kwargs["instruction_settle_delay"] == 0.0
     settings_path = tmp_path / ".parallel-dev" / "settings.json"
     assert json.loads(settings_path.read_text(encoding="utf-8"))["boss_mode"] == "rewrite"
 

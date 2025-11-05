@@ -8,7 +8,6 @@ from parallel_developer import controller
 @pytest.fixture(autouse=True)
 def isolate_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PARALLEL_DEV_MAIN_INSTRUCTION_DELAY", "0")
     yield
 
 
@@ -46,7 +45,6 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
     monkeypatch.setattr("parallel_developer.controller.LogManager", lambda **_: log_manager)
     def fake_orchestrator(**kwargs):
         assert kwargs["boss_mode"].value == "score"
-        assert kwargs["instruction_settle_delay"] == 0.0
         return orchestrator_instance
 
     monkeypatch.setattr(

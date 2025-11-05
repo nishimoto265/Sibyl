@@ -43,7 +43,6 @@ class WorkflowManager:
             session_name=c._config.tmux_session,
             reuse_existing_session=c._config.reuse_existing_session,
             session_namespace=c._session_namespace,
-            instruction_settle_delay=c._instruction_settle_delay,
             boss_mode=c._config.boss_mode,
         )
         c._active_orchestrator = orchestrator

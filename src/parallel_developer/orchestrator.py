@@ -83,7 +83,6 @@ class Orchestrator:
         main_session_hook: Optional[Callable[[str], None]] = None,
         worker_decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], "CycleLayout"], bool]] = None,
         boss_mode: BossMode = BossMode.SCORE,
-        instruction_settle_delay: float = 0.0,
     ) -> None:
         self._tmux = tmux_manager
         self._worktree = worktree_manager
@@ -95,7 +94,6 @@ class Orchestrator:
         self._active_worker_sessions: List[str] = []
         self._main_session_hook: Optional[Callable[[str], None]] = main_session_hook
         self._worker_decider = worker_decider
-        self._instruction_settle_delay = instruction_settle_delay
 
     def set_main_session_hook(self, hook: Optional[Callable[[str], None]]) -> None:
         self._main_session_hook = hook
@@ -334,8 +332,6 @@ class Orchestrator:
             main_session_id,
             timeout_seconds=10.0,
         )
-        if self._instruction_settle_delay > 0:
-            time.sleep(self._instruction_settle_delay)
         self._tmux.interrupt_pane(pane_id=layout.main_pane)
         self._monitor.capture_instruction(
             pane_id=layout.main_pane,

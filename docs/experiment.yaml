@@ -367,7 +367,6 @@
   - CodexMonitorのセッションマップを用いた衝突検出を維持したままpytest全体を再実行し成功を確認
   - ESCキャンセル後も直前のセッションIDを維持できるよう`controller._perform_revert`とワークフローテストを修正し、再現用テスト（worker再開IDの齟齬）を追加
   - `_main_session_hook` をセッションID取得直後に実行するようOrchestratorを調整し、ハンドラが指示送出完了前にキャンセルされた場合でもメインIDを保持できるようにした
-  - メインペインへ指示を送信したあと `PARALLEL_DEV_MAIN_INSTRUCTION_DELAY` (既定3秒) だけ待機する仕組みを導入し、Codex側が履歴へ書き込む猶予を確保
   reproduce:
   - uv run pytest
   result: tests 86 passed

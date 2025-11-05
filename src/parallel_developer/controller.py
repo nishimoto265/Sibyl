@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime
@@ -201,20 +200,11 @@ class CLIController:
         except ValueError:
             self._config.boss_mode = BossMode.SCORE
         self._session_namespace: str = self._config.session_id
-        self._instruction_settle_delay = self._load_instruction_delay()
         self._last_started_main_session_id: Optional[str] = None
         self._pre_cycle_selected_session: Optional[str] = None
         self._pre_cycle_selected_session_set: bool = False
         self._command_specs: Dict[str, CommandSpecEntry] = self._build_command_specs()
         self._workflow = WorkflowManager(self)
-
-    def _load_instruction_delay(self) -> float:
-        raw = os.getenv("PARALLEL_DEV_MAIN_INSTRUCTION_DELAY", "3.0")
-        try:
-            value = float(raw)
-        except ValueError:
-            value = 3.0
-        return max(0.0, value)
 
     async def handle_input(self, user_input: str) -> None:
         text = user_input.strip()
@@ -1046,7 +1036,6 @@ class CLIController:
         session_name: Optional[str] = None,
         reuse_existing_session: bool = False,
         session_namespace: Optional[str] = None,
-        instruction_settle_delay: float = 0.0,
         boss_mode: BossMode = BossMode.SCORE,
     ) -> Orchestrator:
         raise RuntimeError("Orchestrator builder is not configured.")
@@ -1059,7 +1048,6 @@ def build_orchestrator(
     session_name: Optional[str] = None,
     reuse_existing_session: bool = False,
     session_namespace: Optional[str] = None,
-    instruction_settle_delay: float = 0.0,
     boss_mode: BossMode = BossMode.SCORE,
 ) -> Orchestrator:
     session_name = session_name or "parallel-dev"
@@ -1105,6 +1093,5 @@ def build_orchestrator(
         log_manager=log_manager,
         worker_count=worker_count,
         session_name=session_name,
-        instruction_settle_delay=instruction_settle_delay,
         boss_mode=boss_mode,
     )
