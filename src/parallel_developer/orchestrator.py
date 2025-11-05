@@ -329,11 +329,11 @@ class Orchestrator:
             main_session_id,
             timeout_seconds=10.0,
         )
-        self._tmux.interrupt_pane(pane_id=layout.main_pane)
         self._monitor.capture_instruction(
             pane_id=layout.main_pane,
             instruction=formatted_instruction,
         )
+        self._tmux.interrupt_pane(pane_id=layout.main_pane)
         if self._main_session_hook:
             self._main_session_hook(main_session_id)
         return main_session_id, formatted_instruction

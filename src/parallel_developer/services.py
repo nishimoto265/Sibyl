@@ -164,6 +164,19 @@ class TmuxLayoutManager:
                 f"cd {shlex.quote(str(worker_path))} && "
                 f"{self._codex_command(f'codex resume {shlex.quote(str(base_session_id))}')}"
             )
+            entry = {
+                "timestamp": time.time(),
+                "pane_id": pane_id,
+                "worker_path": str(worker_path),
+                "command": command,
+            }
+            try:
+                debug_log = self.root_path / "logs" / "fork_debug.jsonl"
+                debug_log.parent.mkdir(parents=True, exist_ok=True)
+                with debug_log.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
             self._send_command(pane_id, command)
         self._maybe_wait()
         if worker_list:
@@ -247,7 +260,8 @@ class TmuxLayoutManager:
     def _codex_command(self, command: str) -> str:
         if self.codex_home:
             home = shlex.quote(str(self.codex_home))
-            return f"env HOME={home} {command}"
+            codex_home = shlex.quote(str(self.codex_home / ".codex"))
+            return f"env HOME={home} CODEX_HOME={codex_home} {command}"
         return command
 
     def _broadcast_keys(self, pane_ids: Sequence[str], key: str, *, enter: bool) -> None:

@@ -136,23 +136,42 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     manager.promote_to_main(session_id="session-worker-1", pane_id=layout["main"])
 
     main_pane = monkeypatch_server.sessions[0].windows[0].panes[0]
-    assert any("cd /repo && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex" in entry[0] for entry in main_pane.sent)
+    assert any(
+        "cd /repo && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home CODEX_HOME=/repo/.parallel-dev/sessions/session-a/codex-home/.codex codex"
+        in entry[0]
+        for entry in main_pane.sent
+    )
     assert any("echo main" in entry[0] for entry in main_pane.sent)
     assert main_pane.sent.count(("C-c", False)) >= 2
     worker_pane = monkeypatch_server.sessions[0].windows[0].panes[2]
-    assert any(entry[0].startswith("cd /repo/.parallel-dev/sessions/session-a/worktrees/worker-1 && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex resume") for entry in worker_pane.sent)
+    assert any(
+        entry[0].startswith(
+            "cd /repo/.parallel-dev/sessions/session-a/worktrees/worker-1 && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home CODEX_HOME=/repo/.parallel-dev/sessions/session-a/codex-home/.codex codex resume"
+        )
+        for entry in worker_pane.sent
+    )
     assert worker_pane.sent.count(("C-c", False)) >= 2
     assert worker_pane.sent.count(("C-[", False)) >= 2
     assert worker_pane.sent.count(("", True)) == 0
     other_worker_pane = monkeypatch_server.sessions[0].windows[0].panes[3]
     assert other_worker_pane.sent.count(("C-[", False)) >= 2
     assert other_worker_pane.sent.count(("", True)) == 0
-    assert main_pane.sent[-1] == ("env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex resume session-worker-1", True)
+    assert (
+        main_pane.sent[-1]
+        == (
+            "env HOME=/repo/.parallel-dev/sessions/session-a/codex-home CODEX_HOME=/repo/.parallel-dev/sessions/session-a/codex-home/.codex codex resume session-worker-1",
+            True,
+        )
+    )
 
     boss_pane = monkeypatch_server.sessions[0].windows[0].panes[1]
     assert ("C-c", False) in boss_pane.sent
     manager.resume_session(pane_id=layout["main"], workdir=Path("/repo"), session_id="session-main")
-    assert any("env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex resume session-main" in entry[0] for entry in main_pane.sent)
+    assert any(
+        "env HOME=/repo/.parallel-dev/sessions/session-a/codex-home CODEX_HOME=/repo/.parallel-dev/sessions/session-a/codex-home/.codex codex resume session-main"
+        in entry[0]
+        for entry in main_pane.sent
+    )
 
 
 def test_tmux_layout_manager_recreates_existing_session(monkeypatch_server):
@@ -200,6 +219,8 @@ def test_fork_boss_interrupts_before_resume(monkeypatch_server):
 
     assert boss_pane.sent[:2] == [("C-c", False), ("C-c", False)]
     assert any(
-        entry[0].startswith("cd /repo/.parallel-dev/sessions/session-a/worktrees/boss && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home codex resume session-main")
+        entry[0].startswith(
+            "cd /repo/.parallel-dev/sessions/session-a/worktrees/boss && env HOME=/repo/.parallel-dev/sessions/session-a/codex-home CODEX_HOME=/repo/.parallel-dev/sessions/session-a/codex-home/.codex codex resume session-main"
+        )
         for entry in boss_pane.sent
     )
