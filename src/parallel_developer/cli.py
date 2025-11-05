@@ -559,7 +559,7 @@ class ParallelDeveloperApp(App):
             if item:
                 await self._handle_palette_selection(item)
 
-async def _handle_palette_selection(self, item: PaletteItem) -> None:
+    async def _handle_palette_selection(self, item: PaletteItem) -> None:
         if self._palette_mode == "command":
             command_name = str(item.value)
             options = self.controller.get_command_options(command_name)

@@ -39,6 +39,22 @@ async def test_command_palette_navigate_with_arrow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_command_palette_enter_handles_selection() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        await pilot.press("/")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        palette = app.query_one("#command-palette", CommandPalette)
+        assert palette.display is True  # optionsリストが開いていること
+        active = palette.get_active_item()
+        assert app._pending_command == "/attach"
+        assert active is not None and str(active.value) in {"auto", "manual", "now"}
+
+
+@pytest.mark.asyncio
 async def test_click_log_focuses_log_for_selection() -> None:
     app = ParallelDeveloperApp()
     async with app.run_test() as pilot:  # type: ignore[attr-defined]
