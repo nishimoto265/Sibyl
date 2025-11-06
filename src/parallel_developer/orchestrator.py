@@ -337,6 +337,7 @@ class Orchestrator:
             main_session_id,
             timeout_seconds=10.0,
         )
+        self._tmux.prepare_for_instruction(pane_id=layout.main_pane)
         self._monitor.capture_instruction(
             pane_id=layout.main_pane,
             instruction=fork_prompt,
