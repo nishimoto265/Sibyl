@@ -667,6 +667,16 @@ class Orchestrator:
         return metrics
 
     def _worktree_location_hint(self, role: Optional[str] = None) -> str:
+        base_dir = getattr(self._worktree, "worktrees_dir", None)
+        base_path: Optional[Path] = None
+        if base_dir is not None:
+            try:
+                base_path = Path(base_dir)
+            except TypeError:
+                base_path = None
+        if base_path is not None:
+            target_path = base_path / role if role else base_path
+            return str(target_path)
         namespace = getattr(self._worktree, "session_namespace", None)
         if namespace:
             base = f".parallel-dev/sessions/{namespace}/worktrees"

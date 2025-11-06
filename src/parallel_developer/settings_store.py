@@ -1,12 +1,46 @@
-"""Persistence helper for CLI settings stored in .parallel-dev/settings.yaml."""
+"""Persistence helper for CLI settings stored in the user configuration directory."""
 
 from __future__ import annotations
 
+import os
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
 import yaml
+from platformdirs import PlatformDirs
+
+CONFIG_FILENAME = "config.yaml"
+ENV_CONFIG_PATH = "PARALLEL_DEV_CONFIG_PATH"
+ENV_WORKTREE_ROOT = "PARALLEL_DEV_WORKTREE_ROOT"
+_UNSET = object()
+
+
+def default_config_dir() -> Path:
+    system = platform.system().lower()
+    if "windows" in system:
+        dirs = PlatformDirs(appname="ParallelDeveloper", appauthor="ParallelDeveloper", roaming=True)
+        return Path(dirs.user_config_path)
+    return Path.home() / ".parallel-dev"
+
+
+def resolve_settings_path(explicit_path: Optional[Path] = None) -> Path:
+    if explicit_path is not None:
+        return Path(explicit_path)
+    env_path = os.getenv(ENV_CONFIG_PATH)
+    if env_path:
+        return Path(env_path).expanduser()
+    return default_config_dir() / CONFIG_FILENAME
+
+
+def resolve_worktree_root(config_value: Optional[str], fallback: Path) -> Path:
+    env_value = os.getenv(ENV_WORKTREE_ROOT)
+    if env_value:
+        return Path(env_value).expanduser()
+    if config_value:
+        return Path(config_value).expanduser()
+    return Path(fallback)
 
 
 @dataclass
@@ -17,6 +51,7 @@ class SettingsData:
     parallel: str = "3"
     mode: str = "parallel"
     commit: str = "manual"
+    worktree_root: Optional[str] = None
 
 
 class SettingsStore:
@@ -81,8 +116,17 @@ class SettingsStore:
         self._data.commit = value
         self._save()
 
+    @property
+    def worktree_root(self) -> Optional[str]:
+        return self._data.worktree_root
+
+    @worktree_root.setter
+    def worktree_root(self, value: Optional[object]) -> None:
+        self._data.worktree_root = str(value) if value else None
+        self._save()
+
     def snapshot(self) -> Dict[str, object]:
-        return {
+        payload: Dict[str, object] = {
             "commands": {
                 "attach": self._data.attach,
                 "boss": self._data.boss,
@@ -92,6 +136,9 @@ class SettingsStore:
                 "commit": self._data.commit,
             }
         }
+        if self._data.worktree_root:
+            payload["paths"] = {"worktree_root": self._data.worktree_root}
+        return payload
 
     def update(
         self,
@@ -102,6 +149,7 @@ class SettingsStore:
         parallel: Optional[str] = None,
         mode: Optional[str] = None,
         commit: Optional[str] = None,
+        worktree_root: object = _UNSET,
     ) -> None:
         if attach is not None:
             self._data.attach = attach
@@ -115,6 +163,8 @@ class SettingsStore:
             self._data.mode = mode
         if commit is not None:
             self._data.commit = commit
+        if worktree_root is not _UNSET:
+            self._data.worktree_root = str(worktree_root) if worktree_root else None
         self._save()
 
     def _load(self) -> SettingsData:
@@ -129,6 +179,12 @@ class SettingsStore:
 
         commands = payload.get("commands") if isinstance(payload, dict) else None
 
+        paths_data = payload.get("paths") if isinstance(payload, dict) else None
+        worktree_root_value: Optional[str] = None
+        if isinstance(paths_data, dict):
+            raw_root = paths_data.get("worktree_root")
+            if raw_root:
+                worktree_root_value = str(raw_root)
         if isinstance(commands, dict):
             return SettingsData(
                 attach=str(commands.get("attach", "auto")),
@@ -137,6 +193,7 @@ class SettingsStore:
                 parallel=str(commands.get("parallel", "3")),
                 mode=str(commands.get("mode", "parallel")),
                 commit=str(commands.get("commit", "manual")),
+                worktree_root=worktree_root_value,
             )
 
         # Legacy YAML keys fallback
@@ -147,6 +204,7 @@ class SettingsStore:
             parallel=str(payload.get("worker_count", "3")),
             mode=str(payload.get("session_mode", "parallel")),
             commit="auto" if bool(payload.get("auto_commit", False)) else "manual",
+            worktree_root=None,
         )
 
     def _save(self) -> None:

@@ -621,8 +621,8 @@ def test_attach_mode_persists_between_runs(tmp_path, monkeypatch):
     controller._attach_manager.session_exists = Mock(return_value=True)
 
     _run_async(controller.handle_input("/attach manual"))
-    settings_path = tmp_path / ".parallel-dev" / "settings.yaml"
-    assert settings_path.exists()
+    config_path = tmp_path / ".parallel-dev" / "config.yaml"
+    assert config_path.exists()
 
     controller2 = CLIController(
         event_handler=lambda *_: None,
@@ -675,8 +675,8 @@ def test_boss_command_updates_mode(monkeypatch, manifest_store, tmp_path):
     assert controller._config.boss_mode == BossMode.REWRITE
     _run_async(controller.handle_input("Implement feature"))
     assert captured_kwargs["boss_mode"] == BossMode.REWRITE
-    settings_path = tmp_path / ".parallel-dev" / "settings.yaml"
-    data = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
+    config_path = tmp_path / ".parallel-dev" / "config.yaml"
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     assert data.get("commands", {}).get("boss") == "rewrite"
 
 

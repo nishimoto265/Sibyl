@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -20,6 +21,7 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
 
     def fake_tmux(**kwargs):
         assert kwargs["session_namespace"] == "namespace"
+        assert kwargs["root_path"] == Path.cwd()
         return tmux
 
     monkeypatch.setattr(
@@ -29,6 +31,8 @@ def test_build_orchestrator_wires_dependencies(monkeypatch):
 
     def fake_worktree(**kwargs):
         assert kwargs["session_namespace"] == "namespace"
+        assert kwargs["root"] == Path.cwd()
+        assert kwargs["storage_root"] == Path.cwd()
         return worktree
 
     monkeypatch.setattr(

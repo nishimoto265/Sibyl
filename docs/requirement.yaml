@@ -35,14 +35,14 @@ metadata:
   手順:
     - "CLIがワークツリーを準備：`.parallel-dev/sessions/<session_id>/worktrees/worker-N` と `.../worktrees/boss` を生成し、各worker用・Boss用ブランチを再作成する。"
     - "tmuxレイアウトを作成し、メイン/Boss/worker*Nペインで`env HOME=.parallel-dev/sessions/<session_id>/codex-home codex`を起動する。"
-    - "メインペインへ指示を送信し、即座にCtrl+C×2で中断。CodexMonitorが指示とセッションIDを`sessions_map.yaml`に登録する。"
+      - "メインペインへ指示を送信し、即座にCtrl+C×2で中断。CodexMonitorが指示とセッションIDを`~/.parallel-dev/session_maps/<session_id>.yaml`に登録する。"
     - "workerペインで `codex resume <main_session_id>` を実行し、Esc×2→Enterでフォーク後にEnterのみ送信して指示を確定する。"
     - "CodexMonitorが各workerの新セッションIDとrolloutパスを記録し、`/done`検出まで監視する。"
     - "全workerが`/done`を出力したら、Bossペインで `codex resume <main_session_id>` → Esc×2→Enter を実行し、評価プロンプトを送る。"
     - "BossはJSON形式で`scores`を返し、`/done`で完了。Monitorが結果を取り込み、LogManagerが`cycles/<timestamp>.yaml`へ書き出す。"
     - "CLIがスコアボードと候補一覧を表示し、ユーザーは採用する案を番号で選択する。"
     - "WorktreeManagerが選択ブランチをfast-forwardマージし、メインペインで`codex resume <採用セッションID>`を送信して次サイクルを整える。"
-    - "instruction.log・sessions_map.yaml・cycles/*.yaml などのログが `logs/<timestamp>/` に保存される。"
+      - "instruction.log や cycles/*.yaml は `logs/<timestamp>/` に保存され、セッション対応表は `~/.parallel-dev/session_maps/<session_id>.yaml` に保存される。"
   評価・採用フロー:
     - "Boss Codexは評価プロンプトに従い、各候補に対する0〜100の`score`と`comment`をJSON形式で返す。"
     - "CodexMonitorがBoss出力を取り込み、CLIがスコアボード（例: worker1 80, worker2 50, boss -）として表示する。"
@@ -67,7 +67,7 @@ metadata:
       - "CLI画面にスコアボード・採点結果をストリーミング表示し、必要に応じて`/scoreboard`で再表示できるようにする。"
       - "会話ログ（ユーザー指示・エージェント応答）をCLI上にロードし直し、`/resume` 実行直後から続きが見える状態に復元する。"
       - "TextualベースのUIを採用し、イベントログ・状態表示・入力欄を統合する。採点完了後は候補がリスト表示され、上下キーで選択、Enterで決定できる操作を提供する。"
-      - "`/attach` コマンドで現在のtmuxセッションへ外部ターミナルから接続できるようにする。macOSではTerminal.appで `tmux attach -t <session>` を実行し、Linuxではgnome-terminal（存在しない場合は`bash -lc`）で同じコマンドを起動する。`/attach auto|manual` で自動アタッチ時の重複検知を切り替え、autoは指示開始直後にセッション生成完了を待機しつつ、未接続なら自動でターミナルを開く。manualは常に新規ターミナルを立ち上げる。autoモード中でも `/attach` 単体を実行した場合は検知を無視して強制的に接続する。選択したモードは `.parallel-dev/settings.yaml` に保存され、CLI再起動後も継続される。"
+      - "`/attach` コマンドで現在のtmuxセッションへ外部ターミナルから接続できるようにする。macOSではTerminal.appで `tmux attach -t <session>` を実行し、Linuxではgnome-terminal（存在しない場合は`bash -lc`）で同じコマンドを起動する。`/attach auto|manual` で自動アタッチ時の重複検知を切り替え、autoは指示開始直後にセッション生成完了を待機しつつ、未接続なら自動でターミナルを開く。manualは常に新規ターミナルを立ち上げる。autoモード中でも `/attach` 単体を実行した場合は検知を無視して強制的に接続する。選択したモードはユーザー設定ディレクトリの`config.yaml`（例: `~/.parallel-dev/config.yaml`）に保存され、CLI再起動後も継続される。"
 tmuxレイアウト:
   セッション: "1つのtmuxセッションにメインCodex、Boss Codex、worker*Nの計N+2ペインを配置。"
   デフォルトN: 3
@@ -77,7 +77,7 @@ tmuxレイアウト:
     - "worker: 並列開発を担当。必要に応じて追加生成・終了が可能。"
   命名方針: "tmuxセッション名・paneタイトル・ワークツリーブランチにはタイムスタンプ+連番など一意なIDを含め、履歴再開やリソース再割当時に衝突しないようにする。"
 ログ設計:
-  - "`logs/<タイムスタンプ>/sessions_map.yaml` にpane・session_id・rolloutパス・offsetを保存する。"
+  - "`~/.parallel-dev/session_maps/<session_id>.yaml` にpane・session_id・rolloutパス・offsetを保存する。"
   - "`logs/<タイムスタンプ>/instruction.log` に送信指示と対象paneを追記する。"
   - "`logs/<タイムスタンプ>/cycles/<時刻>.yaml` にレイアウト、fork_map、完了状況、選択結果を記録する。"
   - "rollout JSONL本体は`.parallel-dev/sessions/<session_id>/codex-home/.codex/sessions`を参照し、必要に応じて`logs/<タイムスタンプ>/sessions/`へ複製する検討を継続する。共有モードでは従来どおり`~/.codex/sessions`を利用する。"
@@ -90,7 +90,7 @@ tmuxレイアウト:
   - "フォーク後、CLIは`.parallel-dev/sessions/<session_id>/codex-home/.codex/sessions`（または共有モード時は`~/.codex/sessions`）配下のrollout-*.jsonlを監視し、先頭行のSessionMetaから`id`を取得する。"
 環境変数:
   - "ファイル名に含まれるUUIDとSessionMeta内のIDを照合し、一致を確認してセッションIDとして採用する。"
-  - "取得したIDとrolloutパス・offsetは`logs/<タイムスタンプ>/sessions_map.yaml`に記録し、paneやworktreeとの対応関係を保持する。"
+  - "取得したIDとrolloutパス・offsetは`~/.parallel-dev/session_maps/<session_id>.yaml`に記録し、paneやworktreeとの対応関係を保持する。"
   - "Bossが採用したセッションをメインに昇格させる際は、このMapを用いて対象セッションのJSONL・worktree・ペインIDを逆引きし、メインペインで`codex resume <採用ID>`を発行する。"
 セッション再開・マニフェスト:
   - "CLIごとに一意なセッションID（例: タイムスタンプ+UUID）を発行し、tmuxセッション名・pane ID・CodexセッションID・ワークツリーパスを含むマニフェストを保存する。"
@@ -100,6 +100,10 @@ tmuxレイアウト:
   - "復元時にCLI上の会話ログ・採点結果を再表示し、直前の状態から指示を継続できるようにする。"
   - "採点完了直後は候補リストへフォーカスを切り替え、上下キーで候補移動・Enterで採択できるワークフローを提供する。"
   - "セッションリストや削除などの管理コマンドを提供し、不要な履歴やtmuxセッションを整理できるようにする。"
+設定管理:
+  - "ユーザー設定は`platformdirs`で取得したユーザー設定ディレクトリ（例: macOS/Linuxは`~/.parallel-dev/config.yaml`、Windowsは`%AppData%\\ParallelDeveloper\\config.yaml`）へ保存する。"
+  - "`worktree_root`設定キーを追加し、既定値はプロジェクト直下の`.parallel-dev/worktrees/<session_id>`とする。ユーザーが設定値を上書きした場合のみ、そのディレクトリをワークツリーのルートとして利用する。"
+  - "`worktree_root`は設定ファイルおよび環境変数`PARALLEL_DEV_WORKTREE_ROOT`で上書き可能とし、未指定時は従来どおりプロジェクト内にワークツリーを作成することで後方互換性を維持する。"
 機能要件:
   - id: F-001
     内容: "CLIコマンドでタスク指示を作成し、N個のエージェントに同時ブロードキャストする。"

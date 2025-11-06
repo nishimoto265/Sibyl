@@ -21,7 +21,12 @@ import git
 from .orchestrator import BossMode, CandidateInfo, CycleLayout, OrchestrationResult, Orchestrator, SelectionDecision
 from .session_manifest import ManifestStore, PaneRecord, SessionManifest, SessionReference
 from .services import CodexMonitor, LogManager, TmuxLayoutManager, WorktreeManager
-from .settings_store import SettingsStore
+from .settings_store import (
+    SettingsStore,
+    default_config_dir,
+    resolve_settings_path,
+    resolve_worktree_root,
+)
 from .workflow import WorkflowManager
 
 
@@ -211,8 +216,13 @@ class CLIController:
         self._queued_instruction: Optional[str] = None
         self._continue_future: Optional[Future] = None
         self._attach_manager = TmuxAttachManager()
-        settings_path = Path(settings_path) if settings_path else (self._worktree_root / ".parallel-dev" / "settings.yaml")
-        self._settings_store = SettingsStore(settings_path)
+        explicit_settings_path = Path(settings_path).expanduser() if settings_path else None
+        resolved_settings_path = resolve_settings_path(explicit_settings_path)
+        self._settings_store = SettingsStore(resolved_settings_path)
+        self._worktree_storage_root = resolve_worktree_root(
+            self._settings_store.worktree_root,
+            self._worktree_root,
+        )
         self._attach_mode: str = self._settings_store.attach
         saved_boss_mode = self._settings_store.boss
         try:
@@ -1105,6 +1115,8 @@ class CLIController:
             reuse_existing_session=False,
             session_namespace=manifest.session_id,
             boss_mode=self._config.boss_mode,
+            project_root=self._worktree_root,
+            worktree_storage_root=self._worktree_storage_root,
         )
         tmux_manager = orchestrator._tmux  # type: ignore[attr-defined]
         orchestrator._worktree.prepare()  # type: ignore[attr-defined]
@@ -1279,6 +1291,8 @@ class CLIController:
         reuse_existing_session: bool = False,
         session_namespace: Optional[str] = None,
         boss_mode: BossMode = BossMode.SCORE,
+        project_root: Optional[Path] = None,
+        worktree_storage_root: Optional[Path] = None,
     ) -> Orchestrator:
         raise RuntimeError("Orchestrator builder is not configured.")
 
@@ -1291,17 +1305,25 @@ def build_orchestrator(
     reuse_existing_session: bool = False,
     session_namespace: Optional[str] = None,
     boss_mode: BossMode = BossMode.SCORE,
+    project_root: Optional[Path] = None,
+    worktree_storage_root: Optional[Path] = None,
 ) -> Orchestrator:
     session_name = session_name or "parallel-dev"
     timestamp = datetime.utcnow().strftime("%y-%m-%d-%H%M%S")
     base_logs_dir = Path(log_dir) if log_dir else Path("logs") / timestamp
     base_logs_dir.mkdir(parents=True, exist_ok=True)
-    session_map_root = base_logs_dir.parent if log_dir else base_logs_dir
-    session_map_root.mkdir(parents=True, exist_ok=True)
-    session_map_path = session_map_root / "sessions_map.yaml"
+    map_session_id = session_namespace or session_name or "parallel-dev"
+    session_map_dir = default_config_dir() / "session_maps"
+    session_map_dir.mkdir(parents=True, exist_ok=True)
+    session_map_path = session_map_dir / f"{map_session_id}.yaml"
 
-    worktree_root = Path.cwd()
-    session_root = worktree_root / ".parallel-dev"
+    project_root_path = Path(project_root).expanduser() if project_root else Path.cwd()
+    storage_root_path = (
+        Path(worktree_storage_root).expanduser()
+        if worktree_storage_root
+        else project_root_path
+    )
+    session_root = storage_root_path / ".parallel-dev"
     if session_namespace:
         session_root = session_root / "sessions" / session_namespace
     session_root.mkdir(parents=True, exist_ok=True)
@@ -1315,16 +1337,17 @@ def build_orchestrator(
         session_name=session_name,
         worker_count=worker_count,
         monitor=monitor,
-        root_path=worktree_root,
+        root_path=project_root_path,
         startup_delay=0.0,
         backtrack_delay=0.0,
         reuse_existing_session=reuse_existing_session,
         session_namespace=session_namespace,
     )
     worktree_manager = WorktreeManager(
-        root=worktree_root,
+        root=project_root_path,
         worker_count=worker_count,
         session_namespace=session_namespace,
+        storage_root=storage_root_path,
     )
     log_manager = LogManager(logs_dir=base_logs_dir)
 

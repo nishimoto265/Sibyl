@@ -519,3 +519,27 @@
   - uv run pytest
   result: tests 97 passed
   notes: コミットメッセージは `pdev-auto-save`/`pdev-manual-save` プレフィックスで統一し、履歴追跡しやすくした
+- date: '2025-11-06'
+  time_utc: '17:30:00'
+  summary: 設定ファイルのユーザー配置とworktreeルート設定を実装
+  details:
+  - SettingsStoreへplatformdirs依存を追加し、`resolve_settings_path`でユーザー設定ディレクトリの`config.yaml`を既定とするよう変更
+  - 設定ファイルは新規に`config.yaml`へ保存し、旧`.parallel-dev/settings.yaml`はサポート対象外とした。`PARALLEL_DEV_CONFIG_PATH`環境変数による上書きはそのまま利用可能
+  - `worktree_root`設定と環境変数`PARALLEL_DEV_WORKTREE_ROOT`を解釈し、WorktreeManager/TmuxLayoutManagerへストレージルートを伝播
+  - `CLIController`と`build_orchestrator`の呼び出し経路を更新し、tests/conftest.pyで設定ファイルをテスト専用に隔離
+  - 新しい構成に追従するためbuilder/workflow/orchestratorテストを調整し、ユーザー向け要件文書を更新
+  reproduce:
+  - uv run pytest
+  result: tests 97 passed
+  notes: デフォルト配置は`~/.parallel-dev/config.yaml`、ワークツリー保管場所は設定値(`worktree_root`)で切り替え可能になった
+- date: '2025-11-06'
+  time_utc: '18:10:00'
+  summary: セッションマップをユーザディレクトリで管理するよう変更
+  details:
+  - `build_orchestrator` で `~/.parallel-dev/session_maps/<session_id>.yaml` を生成し、CodexMonitorへ渡すよう修正
+  - 既存のログディレクトリ配下では生成しない構造に変更し、session_namespace単位で保存されるよう整理
+  - 要件定義内の説明を新ディレクトリ構成へ更新
+  reproduce:
+  - uv run pytest
+  result: tests 97 passed
+  notes: マッピングファイルの場所が固定化されたため、並列実行時の確認が容易になった

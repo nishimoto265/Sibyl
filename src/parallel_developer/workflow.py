@@ -46,6 +46,8 @@ class WorkflowManager:
             reuse_existing_session=c._config.reuse_existing_session,
             session_namespace=c._session_namespace,
             boss_mode=c._config.boss_mode,
+            project_root=c._worktree_root,
+            worktree_storage_root=c._worktree_storage_root,
         )
         c._active_orchestrator = orchestrator
         c._last_tmux_manager = getattr(orchestrator, "_tmux", None)

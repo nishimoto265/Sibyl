@@ -276,12 +276,19 @@ class TmuxLayoutManager:
 class WorktreeManager:
     """Manage git worktrees for each worker."""
 
-    def __init__(self, root: Path, worker_count: int, session_namespace: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        worker_count: int,
+        session_namespace: Optional[str] = None,
+        storage_root: Optional[Path] = None,
+    ) -> None:
         self.root = Path(root)
         self.worker_count = worker_count
         self.session_namespace = session_namespace
         self._repo = git.Repo(self.root)
         self._ensure_repo_initialized()
+        self._storage_root = Path(storage_root) if storage_root is not None else self.root
         self._session_root = self._resolve_session_root()
         self.worktrees_dir = self._session_root / "worktrees"
         self.boss_path = self.worktrees_dir / "boss"
@@ -377,7 +384,7 @@ class WorktreeManager:
         self._worker_paths = {}
 
     def _resolve_session_root(self) -> Path:
-        base = self.root / ".parallel-dev"
+        base = self._storage_root / ".parallel-dev"
         if self.session_namespace:
             return base / "sessions" / self.session_namespace
         return base
