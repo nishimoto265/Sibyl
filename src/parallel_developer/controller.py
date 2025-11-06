@@ -309,7 +309,7 @@ class CLIController:
     def _build_command_specs(self) -> Dict[str, CommandSpecEntry]:
         return {
             "/attach": CommandSpecEntry(
-                "tmux セッションへの接続モードを切り替える、または即座に接続する",
+                "tmux接続の方法を切り替える",
                 self._cmd_attach,
             options=[
                 CommandOption("auto - 自動でターミナルを開く", "auto", "自動でターミナルを開く"),
@@ -318,7 +318,7 @@ class CLIController:
             ],
             ),
             "/boss": CommandSpecEntry(
-                "Boss モードを切り替える",
+                "Bossの挙動を切り替える",
                 self._cmd_boss,
                 options=[
                     CommandOption("skip - Boss評価をスキップ", "skip", "Boss評価をスキップ"),
@@ -327,7 +327,7 @@ class CLIController:
                 ],
             ),
             "/flow": CommandSpecEntry(
-                "ワークフローモードを切り替える",
+                "フロー自動化レベルを切り替える",
                 self._cmd_flow,
                 options=[
                     CommandOption("manual - 選択や採択を手動で行う", FlowMode.MANUAL.value, "選択や採択を手動で行う"),
@@ -342,7 +342,7 @@ class CLIController:
                 options=[CommandOption(f"{n} - ワーカーを{n}人起動", str(n), f"ワーカーを{n}人起動") for n in range(1, 5)],
             ),
             "/mode": CommandSpecEntry(
-                "実行モードを切り替える",
+                "実行対象を切り替える",
                 self._cmd_mode,
                 options=[
                     CommandOption("main - メインCodexのみ稼働", "main", "メインCodexのみ稼働"),
@@ -350,16 +350,16 @@ class CLIController:
                 ],
             ),
             "/resume": CommandSpecEntry(
-                "保存済みセッションを再開する",
+                "保存セッションを再開する",
                 self._cmd_resume,
                 options_provider=self._build_resume_options,
             ),
             "/continue": CommandSpecEntry(
-                "現行サイクルでワーカーへの追加指示を続ける",
+                "ワーカーの作業を続行する",
                 self._cmd_continue,
             ),
             "/log": CommandSpecEntry(
-                "ログをコピーするかファイルへ保存する",
+                "ログをコピーや保存する",
                 self._cmd_log,
                 options=[
                     CommandOption("copy - ログをクリップボードへコピー", "copy", "ログをクリップボードへコピー"),
@@ -367,7 +367,7 @@ class CLIController:
                 ],
             ),
             "/commit": CommandSpecEntry(
-                "作業内容をGitコミットする（manual/auto）",
+                "Gitコミットを操作する",
                 self._cmd_commit,
                 options=[
                     CommandOption("manual - 現在の変更をコミット", "manual", "現在の変更をその場でコミット"),
@@ -379,11 +379,11 @@ class CLIController:
                 self._cmd_status,
             ),
             "/scoreboard": CommandSpecEntry(
-                "直近のスコアボードを表示する",
+                "最新スコアを表示する",
                 self._cmd_scoreboard,
             ),
             "/done": CommandSpecEntry(
-                "全ワーカーに /done を送信して採点フェーズへ移行する",
+                "採点フェーズへ移行する",
                 self._cmd_done,
             ),
             "/help": CommandSpecEntry(
