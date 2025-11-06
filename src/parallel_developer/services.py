@@ -171,11 +171,6 @@ class TmuxLayoutManager:
             for pane_id in worker_list:
                 pane = self._get_pane(pane_id)
                 pane.send_keys("", enter=True)
-            if self.backtrack_delay > 0:
-                time.sleep(self.backtrack_delay)
-            for pane_id in worker_list:
-                pane = self._get_pane(pane_id)
-                pane.send_keys("", enter=True)
         self._maybe_wait()
         return worker_list
 
