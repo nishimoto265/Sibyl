@@ -162,8 +162,13 @@ def test_orchestrator_runs_happy_path(dependencies):
         "baseline": {Path("/rollout-main"): 1.0},
     }
     prepare_calls = tmux.prepare_for_instruction.call_args_list
-    assert prepare_calls[0].kwargs == {"pane_id": "pane-main"}
-    assert prepare_calls[1].kwargs == {"pane_id": "pane-boss"}
+    assert [call.kwargs for call in prepare_calls] == [
+        {"pane_id": "pane-main"},
+        {"pane_id": "pane-worker-1"},
+        {"pane_id": "pane-worker-2"},
+        {"pane_id": "pane-worker-3"},
+        {"pane_id": "pane-boss"},
+    ]
     boss_instruction_call = send_calls[-1]
     assert boss_instruction_call.kwargs["pane_id"] == "pane-boss"
     assert "score" in boss_instruction_call.kwargs["instruction"]
@@ -373,6 +378,11 @@ def test_rewrite_mode_sends_followup_prompt(dependencies):
         return SelectionDecision(selected_key=candidates[0].key, scores=scores)
 
     orchestrator.run_cycle(dependencies["instruction"], selector=selector)
+
+    prepare_calls = [
+        call.kwargs["pane_id"] for call in tmux.prepare_for_instruction.call_args_list
+    ]
+    assert prepare_calls.count("pane-boss") >= 2
 
     boss_calls = [
         call.kwargs["instruction"]

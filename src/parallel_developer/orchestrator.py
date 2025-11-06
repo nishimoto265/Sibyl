@@ -382,6 +382,7 @@ class Orchestrator:
             worker_path = layout.pane_to_path.get(pane_id)
             if worker_path is None:
                 continue
+            self._tmux.prepare_for_instruction(pane_id=pane_id)
             location_notice = self._worktree_location_notice(custom_path=worker_path)
             base_message = (
                 f"You are {worker_name}. Your dedicated worktree is `{worker_path}`.\n"
@@ -445,6 +446,7 @@ class Orchestrator:
             boss_metrics = self._wait_for_boss_scores(boss_session_id)
             followup = self._build_boss_rewrite_followup()
             if followup:
+                self._tmux.prepare_for_instruction(pane_id=layout.boss_pane)
                 self._tmux.send_instruction_to_pane(
                     pane_id=layout.boss_pane,
                     instruction=followup,
