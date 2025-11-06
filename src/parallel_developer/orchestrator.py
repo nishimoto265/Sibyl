@@ -732,35 +732,45 @@ class Orchestrator:
         worker_names: Sequence[str],
         user_instruction: str,
     ) -> str:
-        worker_lines = "\n".join(
-            f"- Evaluate the proposal from {name}" for name in worker_names
-        )
-        base = (
+        worker_paths: Dict[str, Path] = getattr(self._worktree, "_worker_paths", {})
+        worker_lines: List[str] = []
+        for name in worker_names:
+            path = worker_paths.get(name)
+            if path is None:
+                path = Path(self._worktree_location_hint(role=name))
+            worker_lines.append(f"- {name} (worktree: {path})")
+        worker_section = "\n".join(worker_lines)
+
+        instruction = (
+            "Boss evaluation phase:\n"
             "You are the reviewer. The original user instruction was:\n"
-            f"""{user_instruction}\n\n"""
+            f"{user_instruction}\n\n"
+            "Candidates:\n"
+            f"{worker_section}\n\n"
             "Tasks:\n"
-            f"{worker_lines}\n\n"
-            "For each candidate, assign a numeric score between 0 and 100 and provide a short comment.\n"
-            "Respond with JSON using the schema:\n"
-            "{\n  \"scores\": {\n    \"worker-1\": {\"score\": <number>, \"comment\": <string>},\n"
-            "    ... other candidates ...\n  }\n}\n"
-            "Output only the JSON object for the evaluation.\n"
+            "- Review each worker proposal and assess its quality.\n"
+            "- For each candidate, assign a numeric score between 0 and 100 and provide a short comment.\n\n"
+            "Evaluation checklist:\n"
+            "- Confirm whether each worker obeyed the user instruction exactly.\n"
+            "- Penalize answers that responded only with `/done` or omitted required content.\n"
+            "- Note formatting mistakes or any extra/unrequested text.\n\n"
+            "Respond with JSON only, using the structure:\n"
+            "{\n"
+            '  "scores": {\n'
+            '    "worker-1": {"score": <number>, "comment": "<string>"},\n'
+            "    ... other candidates ...\n"
+            "  }\n"
+            "}\n\n"
+            "Output only the JSON object for the evaluation—do NOT return Markdown, prose, or `/done` at this stage.\n"
         )
         if self._boss_mode == BossMode.REWRITE:
-            safety = self._worktree_location_notice(custom_path=self._worktree.boss_path).strip()
-            return (
-                "Boss evaluation and rewrite phase:\n"
-                f"{base}"
-                f"{safety}\n"
-                "After you emit the JSON scoreboard, stay in this boss workspace and produce the final merged implementation.\n"
-                "Refactor or combine the strongest worker contributions. If one worker result is already ideal, copy it into this boss workspace instead of rewriting from scratch.\n"
-                "When the boss implementation is complete, respond with /done."
+            instruction += (
+                "After you emit the JSON scoreboard, remain in this boss workspace and produce the final merged solution.\n"
+                "When the merged implementation is complete, respond with /done."
             )
-        return (
-            "Boss evaluation phase:\n"
-            f"{base}"
-            "After the JSON response, send /done."
-        )
+        else:
+            instruction += "After the JSON response, send /done."
+        return instruction
 
     def _build_boss_rewrite_followup(self) -> str:
         if self._boss_mode != BossMode.REWRITE:
