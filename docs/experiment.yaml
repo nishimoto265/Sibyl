@@ -408,6 +408,18 @@
   - uv run pytest
   result: tests 96 passed
   notes: tmuxや実Codexは起動せずに擬似的なセッションIDとログパスで挙動を検証
+- date: '2025-11-06'
+  time_utc: '03:25:00'
+  summary: セッション再開時にもワークツリーがセッション固有ディレクトリを使うよう修正
+  details:
+  - Manifest再適用時にcontrollerの_session_namespaceを更新し、tmux復元で使うorchestrator_builderへsession_namespace/boss_modeを渡すよう変更
+  - /resume後にsession_namespaceが欠けて共有`.parallel-dev/worktrees`を再初期化していた問題を再現し、修正後にnamespaceが引き継がれることを確認
+  - CLIテストに`test_load_session_recreates_with_session_namespace`を追加し、builderへ渡る引数とダミーtmuxの動作を検証
+  reproduce:
+  - uv run pytest tests/cli_test.py -k session_namespace -q
+  - uv run pytest
+  result: tests 96 passed
+  notes: tmuxはスタブ化し、GitPythonで初期コミットを作成した上でワークツリー干渉が起きないことを検証
 
 - date: '2025-11-06'
   time_utc: '06:10:20'

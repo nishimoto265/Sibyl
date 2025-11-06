@@ -998,6 +998,7 @@ class CLIController:
         self._last_scoreboard = manifest.scoreboard or {}
         self._last_instruction = manifest.latest_instruction
         self._last_selected_session = manifest.selected_session_id
+        self._session_namespace = manifest.session_id
         self._emit_status("再開準備完了")
         self._ensure_tmux_session(manifest)
 
@@ -1019,6 +1020,8 @@ class CLIController:
             log_dir=Path(manifest.logs_dir) if manifest.logs_dir else None,
             session_name=manifest.tmux_session,
             reuse_existing_session=False,
+            session_namespace=manifest.session_id,
+            boss_mode=self._config.boss_mode,
         )
         tmux_manager = orchestrator._tmux  # type: ignore[attr-defined]
         orchestrator._worktree.prepare()  # type: ignore[attr-defined]

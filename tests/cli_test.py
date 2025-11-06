@@ -6,9 +6,11 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
+import sys
 from unittest.mock import Mock
 
 import pytest
+import git
 
 from parallel_developer.controller import CLIController, SessionMode, TmuxAttachManager
 from parallel_developer.orchestrator import BossMode, CycleArtifact, OrchestrationResult
@@ -197,6 +199,105 @@ def test_tmux_attach_manager_linux(monkeypatch, tmp_path):
     assert command[:4] == ["gnome-terminal", "--", "bash", "-lc"]
     expected_cmd = f"tmux attach -t {shlex.quote(session)}"
     assert command[4] == expected_cmd
+
+
+def test_load_session_recreates_with_session_namespace(tmp_path, monkeypatch):
+    repo = git.Repo.init(tmp_path)
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    repo.index.add(["README.md"])
+    repo.index.commit("init")
+
+    manifest_store = ManifestStore(tmp_path / "manifests")
+    logs_root = tmp_path / "logs"
+    cycle_dir = logs_root / "session-test" / "cycle-1"
+    cycle_dir.mkdir(parents=True, exist_ok=True)
+    conversation_log = cycle_dir / "conversation.log"
+    conversation_log.write_text("{}", encoding="utf-8")
+    boss_path = tmp_path / "boss"
+    worker_path = tmp_path / "worker"
+    boss_path.mkdir()
+    worker_path.mkdir()
+
+    manifest = SessionManifest(
+        session_id="session-test",
+        created_at="2025-11-06T00:00:00",
+        tmux_session="parallel-dev-session",
+        worker_count=1,
+        mode="parallel",
+        logs_dir=str(cycle_dir),
+        latest_instruction="復元テスト",
+        scoreboard={"worker-1": {"score": 90.0}},
+        conversation_log=str(conversation_log),
+        selected_session_id="session-worker",
+        main=PaneRecord(role="main", name=None, session_id="session-main", worktree=str(tmp_path)),
+        boss=PaneRecord(role="boss", name="boss", session_id="session-boss", worktree=str(boss_path)),
+        workers={
+            "worker-1": PaneRecord(
+                role="worker",
+                name="worker-1",
+                session_id="session-worker",
+                worktree=str(worker_path),
+            )
+        },
+    )
+    manifest_store.save_manifest(manifest)
+
+    captured_kwargs = {}
+
+    class DummyTmux:
+        def __init__(self) -> None:
+            self.resume_calls = []
+            self.boss_path = None
+            self.reuse = None
+
+        def set_boss_path(self, path: Path) -> None:
+            self.boss_path = Path(path)
+
+        def set_reuse_existing_session(self, reuse: bool) -> None:
+            self.reuse = reuse
+
+        def ensure_layout(self, *, session_name: str, worker_count: int) -> SimpleNamespace:
+            return SimpleNamespace(
+                main_pane="main",
+                boss_pane="boss",
+                worker_panes=["worker-pane"],
+                worker_names=["worker-1"],
+            )
+
+        def resume_session(self, *, pane_id: str, workdir: Path, session_id: str) -> None:
+            self.resume_calls.append((pane_id, Path(workdir), session_id))
+
+    class DummyWorktree:
+        def prepare(self) -> dict:
+            return {}
+
+    dummy_tmux = DummyTmux()
+    dummy_worktree = DummyWorktree()
+
+    def builder(**kwargs):
+        captured_kwargs.update(kwargs)
+        return SimpleNamespace(_tmux=dummy_tmux, _worktree=dummy_worktree)
+
+    class FakeServer:
+        def find_where(self, query):
+            return None
+
+    fake_libtmux = SimpleNamespace(Server=lambda: FakeServer())
+    monkeypatch.setitem(sys.modules, "libtmux", fake_libtmux)
+
+    controller = CLIController(
+        event_handler=lambda event, payload: None,
+        orchestrator_builder=builder,
+        manifest_store=manifest_store,
+        worktree_root=tmp_path,
+    )
+    controller._resume_options = manifest_store.list_sessions()
+    controller._load_session(1)
+
+    assert controller._session_namespace == "session-test"
+    assert captured_kwargs.get("session_namespace") == "session-test"
+    assert dummy_tmux.reuse is True
+    assert dummy_tmux.boss_path == boss_path
 
 
 def test_tmux_attach_manager_linux_fallback(monkeypatch, tmp_path):
