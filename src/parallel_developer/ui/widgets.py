@@ -219,11 +219,12 @@ class CommandPalette(Static):
         self._items: List[PaletteItem] = []
         self._active_index: int = 0
         self._renderable: Text = Text()
+        self._max_items: int = 7
 
     def set_items(self, items: List[PaletteItem]) -> None:
-        self._items = items
+        self._items = items[: self._max_items]
         self._active_index = 0
-        if not items:
+        if not self._items:
             self.display = False
             self._renderable = Text()
             return

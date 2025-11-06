@@ -380,6 +380,8 @@ class ParallelDeveloperApp(App):
         self.command_input.text = value
         self._suppress_command_change = False
         self._last_command_text = value
+        if not value:
+            self._hide_command_palette()
 
     def _update_command_suggestions(self, prefix: str) -> None:
         suggestions = self.controller.get_command_suggestions(prefix)
