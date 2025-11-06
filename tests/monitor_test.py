@@ -107,7 +107,7 @@ def test_monitor_waits_for_done(tmp_path: Path):
 
     completion = monitor.await_completion(session_ids=["session-a", "session-b"], timeout_seconds=0.1)
     assert completion["session-a"]["done"] is True
-    assert completion["session-b"]["done"] is True
+    assert completion["session-b"]["done"] is False
 
 
 def test_monitor_force_completion_during_wait(tmp_path: Path):

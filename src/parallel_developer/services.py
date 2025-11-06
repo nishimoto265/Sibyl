@@ -880,21 +880,6 @@ class CodexMonitor:
                     if any(segment == "/done" for segment in lines):
                         done_detected = True
                         break
-                    for segment in lines:
-                        try:
-                            maybe_json = json.loads(segment)
-                        except json.JSONDecodeError:
-                            continue
-                        if isinstance(maybe_json, dict) and "scores" in maybe_json:
-                            done_detected = True
-                            break
-                    if done_detected:
-                        break
-                elif block_type == "output_json":
-                    data = block.get("json")
-                    if isinstance(data, dict) and "scores" in data:
-                        done_detected = True
-                        break
             if done_detected:
                 break
 

@@ -389,7 +389,6 @@ def test_rewrite_mode_sends_followup_prompt(dependencies):
     orchestrator.run_cycle(dependencies["instruction"], selector=selector)
 
     calls = monitor.consume_session_until_eof.call_args_list
-    assert call("session-boss") in calls
     assert calls[-1] == call("session-worker-1")
     boss_calls = [
         call.kwargs["instruction"]
