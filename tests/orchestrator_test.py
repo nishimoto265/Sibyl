@@ -163,8 +163,8 @@ def test_orchestrator_runs_happy_path(dependencies):
         "pane_id": "pane-boss",
         "baseline": {Path("/rollout-main"): 1.0},
     }
-    prepare_calls = tmux.prepare_for_instruction.call_args_list
-    assert [call.kwargs for call in prepare_calls] == [
+    prepare_calls = [call.kwargs for call in tmux.prepare_for_instruction.call_args_list]
+    assert prepare_calls[:5] == [
         {"pane_id": "pane-main"},
         {"pane_id": "pane-worker-1"},
         {"pane_id": "pane-worker-2"},

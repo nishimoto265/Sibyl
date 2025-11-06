@@ -446,6 +446,7 @@ class Orchestrator:
             boss_metrics = self._wait_for_boss_scores(boss_session_id)
             followup = self._build_boss_rewrite_followup()
             if followup:
+                self._tmux.prepare_for_instruction(pane_id=layout.boss_pane)
                 self._tmux.send_instruction_to_pane(
                     pane_id=layout.boss_pane,
                     instruction=followup,
