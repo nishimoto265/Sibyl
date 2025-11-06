@@ -411,14 +411,14 @@
 
 - date: '2025-11-06'
   time_utc: '06:10:20'
-  summary: dev_testへ簡易HELLOスクリプトを追加
+  summary: dev_testへHELLOスクリプトと詳細ログ出力を追加
   details:
-  - `dev_test/25-11-06-15_hello.py`を新規作成し、`main`経由でHelloメッセージを表示する実装を追加
-  - 既存uv環境を流用する想定で、後続のTTDやログ連携に備えてエントリポイント関数を分離
+  - `dev_test/25-11-06-15_hello.py`を新規作成し、TTD後の実装を想定して`run`と`main`を分離
+  - FileHandlerで`logs/25-11-06-15_hello.log`へDEBUG/INFOログを出力し、実行フローを追跡できるようにした
   reproduce:
   - uv run python dev_test/25-11-06-15_hello.py
-  result: Hello, world!が標準出力に表示される
-  notes: 追加ログは未設定、必要に応じてロガーを導入予定
+  result: Hello, world!が標準出力に表示され、ログにhello_script_start/message_prepared/completeが記録される
+  notes: ロガーは再利用を想定し、複数呼び出し時はハンドラを増やさない
 - date: '2025-11-06'
   time_utc: '06:13:41'
   summary: dev_testへEVENINGスクリプトを追加
