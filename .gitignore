@@ -7,6 +7,9 @@ __pycache__/
 *.pyo
 *.swp
 25-11-01-18_codex_src/
+codex_src/
 uv.lock
 *uv.lock
 *.jsonl
+dev_test/
+tests/
