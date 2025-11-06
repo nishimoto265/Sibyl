@@ -732,55 +732,47 @@ class Orchestrator:
         worker_names: Sequence[str],
         user_instruction: str,
     ) -> str:
-        worker_lines: List[str] = []
-        worker_paths: Dict[str, Path] = getattr(self._worktree, "_worker_paths", {})
-        for name in worker_names:
-            raw_path = worker_paths.get(name)
-            if raw_path is None:
-                raw_path = Path(self._worktree_location_hint(role=name))
-            worker_lines.append(f"- {name} (worktree: {raw_path})")
-        worker_section = "\n".join(worker_lines)
-
-        instruction = (
-            "Boss evaluation phase:\n"
-            "You are the reviewer. The original user instruction was:\n"
-            f"{user_instruction}\n\n"
-            "Candidates:\n"
-            f"{worker_section}\n\n"
-            "Tasks:\n"
-            "- Review each worker proposal and assess its quality.\n"
-            "- For each candidate, assign a numeric score between 0 and 100 and provide a short comment.\n\n"
-            "Respond with JSON only, using the structure:\n"
-            "{\n"
-            '  "scores": {\n'
-            '    "worker-1": {"score": <number>, "comment": "<string>"},\n'
-            "    ... other candidates ...\n"
-            "  }\n"
-            "}\n\n"
-            "Do not output any extra text outside the JSON object.\n"
-            "After you emit the JSON scoreboard, remain in this boss workspace and produce the final merged solution.\n"
-            "When the merged implementation is complete, respond with /done."
+        worker_lines = "\n".join(
+            f"- Evaluate the proposal from {name}" for name in worker_names
         )
-        return instruction
+        base = (
+            "You are the reviewer. The original user instruction was:\n"
+            f"""{user_instruction}\n\n"""
+            "Tasks:\n"
+            f"{worker_lines}\n\n"
+            "For each candidate, assign a numeric score between 0 and 100 and provide a short comment.\n"
+            "Respond with JSON using the schema:\n"
+            "{\n  \"scores\": {\n    \"worker-1\": {\"score\": <number>, \"comment\": <string>},\n"
+            "    ... other candidates ...\n  }\n}\n"
+            "Output only the JSON object for the evaluation.\n"
+        )
+        if self._boss_mode == BossMode.REWRITE:
+            safety = self._worktree_location_notice(custom_path=self._worktree.boss_path).strip()
+            return (
+                "Boss evaluation and rewrite phase:\n"
+                f"{base}"
+                f"{safety}\n"
+                "After you emit the JSON scoreboard, stay in this boss workspace and produce the final merged implementation.\n"
+                "Refactor or combine the strongest worker contributions. If one worker result is already ideal, copy it into this boss workspace instead of rewriting from scratch.\n"
+                "When the boss implementation is complete, respond with /done."
+            )
+        return (
+            "Boss evaluation phase:\n"
+            f"{base}"
+            "After the JSON response, send /done."
+        )
 
     def _build_boss_rewrite_followup(self) -> str:
         if self._boss_mode != BossMode.REWRITE:
             return ""
-        boss_path = Path(self._worktree.boss_path)
-        location_steps = (
-            "Before you edit anything:\n"
-            "1. Run `pwd`. If the output does not contain "
-            f"{boss_path}, run `cd {boss_path}`.\n"
-            "2. Run `pwd` again to confirm you are inside the boss worktree. Do not edit files outside this directory.\n"
-        )
         return (
             "Boss integration phase:\n"
-            "You have already produced the JSON scoreboard. Now deliver the final merged implementation in this boss workspace.\n\n"
-            f"{location_steps}\n"
-            "Integration tasks:\n"
+            "You have already produced the JSON scoreboard for the workers.\n"
+            "Now stay in this boss workspace and deliver the final merged implementation.\n"
             "- Review the worker outputs you just scored and decide how to combine or refine them.\n"
-            "- If one worker result already satisfies the goal, copy or adjust it here; otherwise merge or refactor the strongest parts so this boss worktree becomes the final solution.\n\n"
-            "When the implementation is complete, respond with /done."
+            "- If one worker result is already ideal, copy it into this boss workspace; otherwise, refactor or merge the strongest parts.\n"
+            "Make all required edits here so this boss workspace becomes the final solution.\n"
+            "When the boss implementation is complete, respond with /done."
         )
 
     def _wait_for_boss_scores(self, boss_session_id: str, timeout: float = 120.0) -> Dict[str, Dict[str, Any]]:

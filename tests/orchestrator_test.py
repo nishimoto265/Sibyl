@@ -32,11 +32,6 @@ def dependencies():
         "worker-2": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-2"),
         "worker-3": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-3"),
     }
-    worktree._worker_paths = {
-        "worker-1": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-1"),
-        "worker-2": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-2"),
-        "worker-3": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-3"),
-    }
 
     worker_panes = ["pane-worker-1", "pane-worker-2", "pane-worker-3"]
     layout = {
@@ -339,10 +334,6 @@ def test_boss_instruction_rewrite_mode():
     worktree.boss_path = Path("/repo/.parallel-dev/sessions/session-a/worktrees/boss")
     worktree.boss_branch = "parallel-dev/session-a/boss"
     worktree.worker_branch.side_effect = lambda name: f"parallel-dev/session-a/{name}"
-    worktree._worker_paths = {
-        "worker-1": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-1"),
-        "worker-2": Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-2"),
-    }
     monitor = Mock()
     logger = Mock()
 
@@ -357,11 +348,10 @@ def test_boss_instruction_rewrite_mode():
     )
 
     text = orchestrator._build_boss_instruction(["worker-1", "worker-2"], "Implement feature X")
-    assert "Boss evaluation phase" in text
-    assert "Candidates:" in text
-    assert "worker-1 (worktree: /repo/.parallel-dev/sessions/session-a/worktrees/worker-1)" in text
-    assert "Respond with JSON only" in text
-    assert "When the merged implementation is complete, respond with /done." in text
+    assert "For each candidate" in text
+    assert "After you emit the JSON scoreboard" in text
+    assert "Run `pwd`" in text
+    assert "respond with /done" in text.lower()
 
 
 def test_rewrite_mode_sends_followup_prompt(dependencies):
@@ -410,4 +400,3 @@ def test_rewrite_mode_sends_followup_prompt(dependencies):
     ]
     assert len(boss_calls) >= 2
     assert "Boss integration phase" in boss_calls[1]
-    assert "Before you edit anything" in boss_calls[1]
