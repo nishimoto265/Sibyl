@@ -447,6 +447,27 @@ class CodexMonitor:
         self._write_map(data)
         self._reserve_session(session_id, rollout_path)
 
+    def consume_session_until_eof(self, session_id: str) -> None:
+        data = self._load_map()
+        entry = data.get("sessions", {}).get(session_id)
+        if entry is None:
+            return
+        rollout_path = Path(entry.get("rollout_path", ""))
+        if not rollout_path.exists():
+            return
+        try:
+            size = rollout_path.stat().st_size
+        except OSError:
+            return
+        entry["offset"] = int(size)
+        sessions = data.setdefault("sessions", {})
+        sessions[session_id] = entry
+        panes = data.setdefault("panes", {})
+        for pane_id, pane_entry in panes.items():
+            if pane_entry.get("session_id") == session_id:
+                pane_entry["offset"] = int(size)
+        self._write_map(data)
+
     def bind_existing_session(self, *, pane_id: str, session_id: str) -> None:
         data = self._load_map()
         sessions = data.setdefault("sessions", {})
