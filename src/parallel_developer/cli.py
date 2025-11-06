@@ -386,7 +386,7 @@ class ParallelDeveloperApp(App):
         if not suggestions:
             self._hide_command_palette()
             return
-        items = [PaletteItem(s.name, s.name) for s in suggestions]
+        items = [PaletteItem(f"{s.name:<10} {s.description}", s.name) for s in suggestions]
         self._show_command_palette(items, mode="command")
 
     def _format_option_label(self, option: CommandOption) -> str:
