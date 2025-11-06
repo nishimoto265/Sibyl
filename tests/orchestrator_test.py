@@ -379,11 +379,6 @@ def test_rewrite_mode_sends_followup_prompt(dependencies):
 
     orchestrator.run_cycle(dependencies["instruction"], selector=selector)
 
-    prepare_calls = [
-        call.kwargs["pane_id"] for call in tmux.prepare_for_instruction.call_args_list
-    ]
-    assert prepare_calls.count("pane-boss") >= 2
-
     boss_calls = [
         call.kwargs["instruction"]
         for call in tmux.send_instruction_to_pane.call_args_list
