@@ -545,7 +545,6 @@ class Orchestrator:
         if self._boss_mode == BossMode.REWRITE:
             followup = self._build_boss_rewrite_followup(boss_flag=boss_flag)
             if followup:
-                self._tmux.prepare_for_instruction(pane_id=layout.boss_pane)
                 self._tmux.send_instruction_to_pane(
                     pane_id=layout.boss_pane,
                     instruction=followup,
