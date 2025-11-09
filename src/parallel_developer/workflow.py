@@ -74,20 +74,12 @@ class WorkflowManager:
 
         auto_attach_task: Optional[asyncio.Task[None]] = None
         cancelled = False
-        continued = False
         try:
             c._emit("log", {"text": f"指示を開始: {instruction}"})
             if c._attach_mode == "auto":
                 auto_attach_task = asyncio.create_task(c._handle_attach_command(force=False))
             result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
-            continued = getattr(result, "continue_requested", False)
-            if continued:
-                c._last_selected_session = result.selected_session
-                c._active_main_session_id = result.selected_session
-                c._config.reuse_existing_session = True
-                c._last_scoreboard = {}
-                c._emit("log", {"text": "ワーカーを継続します。新しい指示を入力してください。"})
-            elif cycle_id in c._cancelled_cycles:
+            if cycle_id in c._cancelled_cycles:
                 cancelled = True
                 c._cancelled_cycles.discard(cycle_id)
             else:
@@ -110,6 +102,10 @@ class WorkflowManager:
             if c._current_cycle_id == cycle_id:
                 c._current_cycle_id = None
             c._running = False
+            c._awaiting_continuation_input = False
+            if c._continuation_input_future and not c._continuation_input_future.done():
+                c._continuation_input_future.set_result("")
+            c._continuation_input_future = None
             if cancelled:
                 c._emit_status("待機中")
                 c._emit_pause_state()
@@ -124,9 +120,6 @@ class WorkflowManager:
                     pass
             c._pre_cycle_selected_session = None
             c._pre_cycle_selected_session_set = False
-
-        if continued:
-            return
 
         if cancelled and c._queued_instruction:
             queued = c._queued_instruction

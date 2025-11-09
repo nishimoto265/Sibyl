@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Literal
 
 from .settings_store import default_config_dir
 
@@ -38,6 +38,12 @@ class CandidateInfo:
     session_id: Optional[str]
     branch: str
     worktree: Path
+
+
+@dataclass(slots=True)
+class WorkerDecision:
+    action: Literal["continue", "done"]
+    instruction: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -93,7 +99,7 @@ class Orchestrator:
         worker_count: int,
         session_name: str,
         main_session_hook: Optional[Callable[[str], None]] = None,
-        worker_decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], "CycleLayout"], bool]] = None,
+        worker_decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], "CycleLayout"], WorkerDecision]] = None,
         boss_mode: BossMode = BossMode.SCORE,
     ) -> None:
         self._tmux = tmux_manager
@@ -113,7 +119,7 @@ class Orchestrator:
 
     def set_worker_decider(
         self,
-        decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], CycleLayout], bool]],
+        decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], CycleLayout], WorkerDecision]],
     ) -> None:
         self._worker_decider = decider
 
@@ -163,13 +169,27 @@ class Orchestrator:
                     session_signal_map[session_id] = flag_path
             completion_info = self._await_worker_completion(fork_map, session_signal_map)
 
-            if self._worker_decider:
-                try:
-                    continue_requested = self._worker_decider(fork_map, completion_info, layout)
-                except Exception:
-                    continue_requested = False
-            else:
-                continue_requested = False
+            while True:
+                if self._worker_decider:
+                    try:
+                        worker_decision = self._worker_decider(fork_map, completion_info, layout)
+                    except Exception:
+                        worker_decision = WorkerDecision(action="done")
+                else:
+                    worker_decision = WorkerDecision(action="done")
+
+                if worker_decision.action == "continue":
+                    continuation_text = (worker_decision.instruction or "").strip()
+                    if not continuation_text:
+                        raise RuntimeError("/continue が選択されましたが追加指示が取得できませんでした。")
+                    self._dispatch_worker_continuation(
+                        layout=layout,
+                        user_instruction=continuation_text,
+                        signal_flags=worker_flag_map,
+                    )
+                    completion_info = self._await_worker_completion(fork_map, session_signal_map)
+                    continue
+                break
 
             worker_sessions = {
                 layout.pane_to_worker[pane_id]: session_id
@@ -190,16 +210,6 @@ class Orchestrator:
                 instruction=formatted_instruction,
                 tmux_session=self._session_name,
             )
-
-            if continue_requested:
-                artifact.selected_session_id = main_session_id
-                self._active_worker_sessions = []
-                return OrchestrationResult(
-                    selected_session=main_session_id,
-                    sessions_summary={},
-                    artifact=artifact,
-                    continue_requested=True,
-                )
 
             if self._boss_mode == BossMode.SKIP:
                 boss_session_id = None
@@ -463,6 +473,36 @@ class Orchestrator:
             )
             message = self._ensure_done_directive(
                 base_message,
+                location_notice=location_notice,
+                completion_flag=completion_flag,
+            )
+            self._tmux.send_instruction_to_pane(
+                pane_id=pane_id,
+                instruction=message,
+            )
+
+    def _dispatch_worker_continuation(
+        self,
+        *,
+        layout: CycleLayout,
+        user_instruction: str,
+        signal_flags: Mapping[str, Path],
+    ) -> None:
+        trimmed = user_instruction.strip()
+        for pane_id in layout.worker_panes:
+            worker_name = layout.pane_to_worker.get(pane_id)
+            worker_path = layout.pane_to_path.get(pane_id)
+            if not worker_name or worker_path is None:
+                continue
+            completion_flag = signal_flags.get(worker_name)
+            self._tmux.prepare_for_instruction(pane_id=pane_id)
+            location_notice = self._worktree_location_notice(custom_path=worker_path)
+            continuation = (
+                f"追加指示です。以下の内容を進めてください:\n{trimmed}\n"
+                "これまでの作業内容はそのまま保持して構いません。"
+            )
+            message = self._ensure_done_directive(
+                continuation,
                 location_notice=location_notice,
                 completion_flag=completion_flag,
             )

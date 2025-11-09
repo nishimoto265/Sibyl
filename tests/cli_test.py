@@ -539,7 +539,7 @@ def test_continue_command_sets_future(tmp_path):
 
     _run_async(controller.execute_command("/continue"))
 
-    assert future.done() and future.result() is True
+    assert future.done() and future.result() == "continue"
 
 
 def test_done_command_resolves_continue_future(tmp_path):
@@ -549,7 +549,19 @@ def test_done_command_resolves_continue_future(tmp_path):
 
     _run_async(controller.execute_command("/done"))
 
-    assert future.done() and future.result() is False
+    assert future.done() and future.result() == "done"
+
+
+def test_continuation_input_is_captured(tmp_path):
+    controller = CLIController(event_handler=lambda *_: None, worktree_root=tmp_path)
+    future = Future()
+    controller._continuation_input_future = future
+    controller._awaiting_continuation_input = True
+
+    _run_async(controller.handle_input("追加作業を続行してください"))
+
+    assert future.done() and future.result() == "追加作業を続行してください"
+    assert controller._awaiting_continuation_input is False
 
 
 def test_attach_auto_mode_skips_when_already_attached(monkeypatch, manifest_store, tmp_path):

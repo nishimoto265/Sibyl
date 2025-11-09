@@ -55,25 +55,6 @@ def base_controller(tmp_path):
 
 
 
-def test_workflow_continue_requests(base_controller):
-    controller, events = base_controller
-
-    result = OrchestrationResult(
-        selected_session="session-123",
-        sessions_summary={"worker": {"score": 90}},
-        continue_requested=True,
-    )
-
-    orchestrator = DummyOrchestrator(controller, result)
-    controller._builder = lambda **kwargs: orchestrator
-
-    _run(controller._workflow.run_instruction("Implement feature"))
-
-    assert controller._last_selected_session == "session-123"
-    assert controller._last_scoreboard == {}
-    assert any("継続" in payload.get("text", "") for event, payload in events if event == "log")
-
-
 def test_workflow_cancel_replays_queued(base_controller):
     controller, _ = base_controller
 
@@ -217,9 +198,47 @@ def test_flow_auto_review_skips_worker_prompt(base_controller):
         pane_to_worker={},
         pane_to_path={},
     )
-    should_continue = controller._handle_worker_decision({}, {}, layout)
-    assert should_continue is False
+    decision = controller._handle_worker_decision({}, {}, layout)
+    assert decision.action == "done"
     assert any("flow auto review" in payload.get("text", "").lower() for event, payload in events if event == "log")
+
+
+def test_handle_worker_decision_manual_continue(monkeypatch, base_controller):
+    controller, events = base_controller
+    layout = CycleLayout(
+        main_pane="%0",
+        boss_pane="%1",
+        worker_panes=["%2"],
+        worker_names=["worker-1"],
+        pane_to_worker={"%2": "worker-1"},
+        pane_to_path={"%2": Path("/tmp/work")},
+    )
+
+    monkeypatch.setattr(controller, "_await_worker_command", lambda: "continue")
+    monkeypatch.setattr(controller, "_await_continuation_instruction", lambda: "追加タスクを続行")
+
+    decision = controller._handle_worker_decision({}, {}, layout)
+
+    assert decision.action == "continue"
+    assert decision.instruction == "追加タスクを続行"
+
+
+def test_handle_worker_decision_manual_done(monkeypatch, base_controller):
+    controller, _ = base_controller
+    layout = CycleLayout(
+        main_pane="%0",
+        boss_pane="%1",
+        worker_panes=["%2"],
+        worker_names=["worker-1"],
+        pane_to_worker={"%2": "worker-1"},
+        pane_to_path={"%2": Path("/tmp/work")},
+    )
+
+    monkeypatch.setattr(controller, "_await_worker_command", lambda: "done")
+
+    decision = controller._handle_worker_decision({}, {}, layout)
+
+    assert decision.action == "done"
 
 
 def test_flow_auto_select_picks_highest_score(base_controller, tmp_path):

@@ -577,3 +577,15 @@
   - uv run pytest
   result: tests 101 passed
   notes: 並列pdevインスタンス間で同じCodex rolloutを検出しても後続インスタンスが待機して次のセッションを拾えることを手元で確認
+- date: '2025-11-09'
+  time_utc: '04:05:07'
+  summary: /continue でワーカーを再フォークせず追加入力を渡せるよう改善
+  details:
+  - Orchestrator.run_cycle に継続ループを導入し、WorkerDecision(action=continue) が返ったときは既存ペインへ追加指示だけを送信して同じ完了フラグを再監視するようにした
+  - CLIController._handle_worker_decision を WorkerDecision を返す実装に改め、/continue→追加指示入力→完了検知の流れを同期的に制御
+  - Textual UI で追加指示入力中はコマンドを受け付けないようガードし、キャンセル時はフラグ状態をリセット
+  - orchestrator/controller/workflow テスト群を更新し、継続ループや追加指示入力の振る舞いを検証
+  reproduce:
+  - uv run pytest
+  result: tests 103 passed
+  notes: /continue 後もtmux・worktreeを再利用できるため、長い作業を分割して指示しても履歴が途切れなくなった

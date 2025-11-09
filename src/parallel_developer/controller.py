@@ -18,7 +18,7 @@ from subprocess import PIPE
 
 import git
 
-from .orchestrator import BossMode, CandidateInfo, CycleLayout, OrchestrationResult, Orchestrator, SelectionDecision
+from .orchestrator import BossMode, CandidateInfo, CycleLayout, OrchestrationResult, Orchestrator, SelectionDecision, WorkerDecision
 from .session_manifest import ManifestStore, PaneRecord, SessionManifest, SessionReference
 from .services import CodexMonitor, LogManager, TmuxLayoutManager, WorktreeManager
 from .settings_store import (
@@ -224,6 +224,8 @@ class CLIController:
         self._active_orchestrator: Optional[Orchestrator] = None
         self._queued_instruction: Optional[str] = None
         self._continue_future: Optional[Future] = None
+        self._continuation_input_future: Optional[Future] = None
+        self._awaiting_continuation_input: bool = False
         self._attach_manager = TmuxAttachManager()
         explicit_settings_path = Path(settings_path).expanduser() if settings_path else None
         resolved_settings_path = resolve_settings_path(explicit_settings_path)
@@ -261,7 +263,20 @@ class CLIController:
         self._workflow = WorkflowManager(self)
 
     async def handle_input(self, user_input: str) -> None:
-        text = user_input.strip()
+        raw_text = user_input.rstrip("\n")
+
+        if self._awaiting_continuation_input:
+            stripped = raw_text.strip()
+            if not stripped:
+                self._emit("log", {"text": "追加指示が空です。何をするか具体的に入力してください。"})
+                return
+            if stripped.startswith("/"):
+                self._emit("log", {"text": "追加指示入力中です。コマンドではなくテキストで指示を入力してください。"})
+                return
+            self._submit_continuation_instruction(raw_text)
+            return
+
+        text = raw_text.strip()
         if not text:
             return
         if text.startswith("/"):
@@ -436,8 +451,8 @@ class CLIController:
 
     async def _cmd_done(self, option: Optional[object]) -> None:
         if self._continue_future and not self._continue_future.done():
-            self._continue_future.set_result(False)
-            self._emit("log", {"text": "/done を検知として扱い、採点フェーズへ進みます。"})
+            self._continue_future.set_result("done")
+            self._emit("log", {"text": "/done を受け付けました。採点フェーズへ移行します。"})
             return
         if self._active_orchestrator:
             count = self._active_orchestrator.force_complete_workers()
@@ -450,10 +465,53 @@ class CLIController:
 
     async def _cmd_continue(self, option: Optional[object]) -> None:
         if self._continue_future and not self._continue_future.done():
-            self._continue_future.set_result(True)
-            self._emit("log", {"text": "/continue を受け付けました。ワーカーに追加指示を送れます。"})
+            self._continue_future.set_result("continue")
+            self._emit("log", {"text": "/continue を受け付けました。追加指示を入力してください。"})
         else:
             self._emit("log", {"text": "/continue は現在利用できません。"})
+
+    def _await_worker_command(self) -> str:
+        future = Future()
+        self._continue_future = future
+        self._emit(
+            "log",
+            {
+                "text": (
+                    "ワーカーの処理が完了しました。追加で作業させるには /continue を、"
+                    "評価へ進むには /done を入力してください。"
+                )
+            },
+        )
+        try:
+            decision = future.result()
+        finally:
+            self._continue_future = None
+        return str(decision)
+
+    def _await_continuation_instruction(self) -> str:
+        future = Future()
+        self._continuation_input_future = future
+        self._awaiting_continuation_input = True
+        self._emit(
+            "log",
+            {
+                "text": "追加指示を入力してください。完了したらワーカーのフラグ更新を待ちます。"
+            },
+        )
+        try:
+            instruction = future.result()
+        finally:
+            self._continuation_input_future = None
+            self._awaiting_continuation_input = False
+        return str(instruction).strip()
+
+    def _submit_continuation_instruction(self, instruction: str) -> None:
+        future = self._continuation_input_future
+        self._continuation_input_future = None
+        self._awaiting_continuation_input = False
+        if future and not future.done():
+            future.set_result(instruction.strip())
+            self._emit("log", {"text": "追加指示を受け付けました。ワーカーの完了を待ちます。"})
 
     async def _cmd_boss(self, option: Optional[object]) -> None:
         if option is None:
@@ -663,7 +721,10 @@ class CLIController:
             self._current_cycle_id = None
             self._running = False
         if self._continue_future and not self._continue_future.done():
-            self._continue_future.set_result(False)
+            self._continue_future.set_result("done")
+        if self._continuation_input_future and not self._continuation_input_future.done():
+            self._continuation_input_future.set_result("")
+        self._awaiting_continuation_input = False
         self._paused = False
         self._emit("log", {"text": "現在のサイクルをキャンセルし、前の状態へ戻しました。"})
         self._emit_status("待機中")
@@ -730,7 +791,7 @@ class CLIController:
         fork_map: Mapping[str, str],
         completion_info: Mapping[str, Any],
         layout: CycleLayout,
-    ) -> bool:
+    ) -> WorkerDecision:
         if getattr(self, "_flow_mode", FlowMode.MANUAL) in {FlowMode.AUTO_REVIEW, FlowMode.FULL_AUTO}:
             self._emit(
                 "log",
@@ -738,23 +799,13 @@ class CLIController:
                     "text": f"[flow {self._flow_mode_display()}] ワーカーの処理が完了しました。採点フェーズへ進みます。",
                 },
             )
-            return False
-        future = Future()
-        self._continue_future = future
-        self._emit(
-            "log",
-            {
-                "text": (
-                    "ワーカーの処理が完了しました。追加で作業させるには /continue を、"
-                    "評価へ進むには /done を入力してください。"
-                )
-            },
-        )
-        try:
-            decision = future.result()
-        finally:
-            self._continue_future = None
-        return bool(decision)
+            return WorkerDecision(action="done")
+
+        command = self._await_worker_command()
+        if str(command).lower() == "continue":
+            instruction = self._await_continuation_instruction()
+            return WorkerDecision(action="continue", instruction=instruction)
+        return WorkerDecision(action="done")
 
     def _record_history(self, text: str) -> None:
         entry = text.strip()

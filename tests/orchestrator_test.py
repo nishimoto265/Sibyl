@@ -10,6 +10,7 @@ from parallel_developer.orchestrator import (
     BossMode,
     Orchestrator,
     SelectionDecision,
+    WorkerDecision,
 )
 
 
@@ -216,37 +217,52 @@ def test_orchestrator_runs_happy_path(dependencies):
     assert result.artifact.boss_session_id == "session-boss"
 
 
-def test_orchestrator_continue_skips_boss_phase(dependencies):
-    decider_called = []
+def test_orchestrator_handles_worker_continuation(dependencies):
+    tmux = dependencies["tmux"]
+    monitor = dependencies["monitor"]
 
-    def worker_decider(fork_map, completion, layout):
-        decider_called.append(True)
-        return True
+    monitor.await_completion.side_effect = [
+        {
+            "session-worker-1": {"done": True},
+            "session-worker-2": {"done": True},
+            "session-worker-3": {"done": True},
+        },
+        {
+            "session-worker-1": {"done": True},
+            "session-worker-2": {"done": True},
+            "session-worker-3": {"done": True},
+        },
+        {"session-boss": {"done": True}},
+    ]
+
+    decisions = iter(
+        [
+            WorkerDecision(action="continue", instruction="追記して"),
+            WorkerDecision(action="done"),
+        ]
+    )
 
     orchestrator = Orchestrator(
-        tmux_manager=dependencies["tmux"],
+        tmux_manager=tmux,
         worktree_manager=dependencies["worktree"],
-        monitor=dependencies["monitor"],
+        monitor=monitor,
         log_manager=dependencies["logger"],
         worker_count=3,
         session_name="parallel-dev",
-        worker_decider=worker_decider,
+        worker_decider=lambda *_: next(decisions),
         boss_mode=BossMode.SCORE,
     )
-
-    orchestrator._run_boss_phase = Mock(name="run_boss_phase")
 
     result = orchestrator.run_cycle(
         dependencies["instruction"],
         selector=lambda *_: SelectionDecision("worker-1", {}),
     )
 
-    assert decider_called
-    orchestrator._run_boss_phase.assert_not_called()
-    dependencies["logger"].record_cycle.assert_not_called()
-    assert result.continue_requested is True
-    assert result.artifact is not None
-    assert result.artifact.main_session_id == "session-main"
+    assert monitor.await_completion.call_count == 2
+    # second batch of worker instructions comes from continuation
+    continuation_calls = [call for call in tmux.send_instruction_to_pane.call_args_list if "追記して" in call.kwargs.get("instruction", "")]
+    assert continuation_calls
+    assert result.continue_requested is False
 
 
 def test_orchestrator_reuses_main_session_without_resume(dependencies):
