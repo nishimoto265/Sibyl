@@ -249,6 +249,7 @@ class CLIController:
         )
         self._worker_flow = WorkerFlowHelper(self, FlowMode)
         self._pause_helper = PauseHelper(self)
+        self._log_hook = lambda message: self._emit(ControllerEventType.LOG, {"text": message})
         self._workflow = WorkflowRunner(self)
 
     async def handle_input(self, user_input: str) -> None:
@@ -1218,6 +1219,7 @@ def build_orchestrator(
     boss_mode: BossMode = BossMode.SCORE,
     project_root: Optional[Path] = None,
     worktree_storage_root: Optional[Path] = None,
+    log_hook: Optional[Callable[[str], None]] = None,
 ) -> Orchestrator:
     session_name = session_name or "parallel-dev"
     timestamp = datetime.utcnow().strftime("%y-%m-%d-%H%M%S")
@@ -1273,4 +1275,5 @@ def build_orchestrator(
         worker_count=worker_count,
         session_name=session_name,
         boss_mode=boss_mode,
+        log_hook=log_hook,
     )

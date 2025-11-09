@@ -217,6 +217,29 @@ def test_orchestrator_runs_happy_path(dependencies):
     assert result.artifact.boss_session_id == "session-boss"
 
 
+def test_merge_failure_logs_message(dependencies):
+    log_messages = []
+    dependencies["worktree"].merge_into_main.side_effect = RuntimeError("dirty tree")
+
+    orchestrator = Orchestrator(
+        tmux_manager=dependencies["tmux"],
+        worktree_manager=dependencies["worktree"],
+        monitor=dependencies["monitor"],
+        log_manager=dependencies["logger"],
+        worker_count=3,
+        session_name="parallel-dev",
+        boss_mode=BossMode.SCORE,
+        log_hook=log_messages.append,
+    )
+
+    def selector(candidates, scoreboard=None):
+        return SelectionDecision(selected_key=candidates[0].key, scores={c.key: 0.0 for c in candidates})
+
+    orchestrator.run_cycle(dependencies["instruction"], selector=selector)
+
+    assert any("マージに失敗" in message for message in log_messages)
+
+
 def test_orchestrator_handles_worker_continuation(dependencies):
     tmux = dependencies["tmux"]
     monitor = dependencies["monitor"]

@@ -49,6 +49,7 @@ class WorkflowRunner:
             boss_mode=c._config.boss_mode,
             project_root=c._worktree_root,
             worktree_storage_root=c._worktree_storage_root,
+            log_hook=self._controller._log_hook,
         )
         c._active_orchestrator = orchestrator
         c._last_tmux_manager = getattr(orchestrator, "_tmux", None)

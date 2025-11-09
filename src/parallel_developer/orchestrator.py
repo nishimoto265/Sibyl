@@ -101,6 +101,7 @@ class Orchestrator:
         main_session_hook: Optional[Callable[[str], None]] = None,
         worker_decider: Optional[Callable[[Mapping[str, str], Mapping[str, Any], "CycleLayout"], WorkerDecision]] = None,
         boss_mode: BossMode = BossMode.SCORE,
+        log_hook: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._tmux = tmux_manager
         self._worktree = worktree_manager
@@ -113,6 +114,7 @@ class Orchestrator:
         self._main_session_hook: Optional[Callable[[str], None]] = main_session_hook
         self._worker_decider = worker_decider
         self._active_signals: Optional[SignalPaths] = None
+        self._log_hook = log_hook
 
     def set_main_session_hook(self, hook: Optional[Callable[[str], None]]) -> None:
         self._main_session_hook = hook
@@ -646,8 +648,13 @@ class Orchestrator:
         if selected.branch and selected.key != "boss":
             try:
                 self._worktree.merge_into_main(selected.branch)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                message = f"[merge] ブランチ {selected.branch} のマージに失敗しました: {exc}"
+                if self._log_hook:
+                    try:
+                        self._log_hook(message)
+                    except Exception:
+                        pass
         if selected.session_id:
             self._tmux.promote_to_main(session_id=selected.session_id, pane_id=main_pane)
             bind_existing = getattr(self._monitor, "bind_existing_session", None)
