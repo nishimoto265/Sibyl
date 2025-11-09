@@ -39,7 +39,7 @@ class TmuxLayoutManager:
         *,
         root_path: Path,
         startup_delay: float = 0.0,
-        backtrack_delay: float = 0.2,
+        backtrack_delay: float = 0.05,
         reuse_existing_session: bool = False,
         session_namespace: Optional[str] = None,
     ) -> None:
