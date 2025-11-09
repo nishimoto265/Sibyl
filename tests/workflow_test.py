@@ -75,7 +75,7 @@ def test_workflow_cancel_replays_queued(base_controller):
     controller._builder = builder
     controller._queued_instruction = "second pass"
 
-    _run(controller._workflow.run_instruction("first pass"))
+    _run(controller._run_instruction("first pass"))
 
     assert controller._queued_instruction is None
     assert controller._last_selected_session == "session-b"
@@ -133,11 +133,11 @@ def test_cancelled_cycle_resumes_previous_session(base_controller):
 
     controller._builder = builder
 
-    _run(controller._workflow.run_instruction("first cancelled"))
+    _run(controller._run_instruction("first cancelled"))
     assert resume_ids[0] == "session-prev"
     assert controller._last_selected_session == "session-prev"
 
-    _run(controller._workflow.run_instruction("second run"))
+    _run(controller._run_instruction("second run"))
     assert resume_ids[1] == "session-prev"
 
 
@@ -177,11 +177,11 @@ def test_first_cycle_cancel_keeps_current_session(base_controller):
 
     controller._builder = builder
 
-    _run(controller._workflow.run_instruction("first cancelled"))
+    _run(controller._run_instruction("first cancelled"))
     assert resume_ids[0] is None
     assert controller._last_selected_session == "session-new"
 
-    _run(controller._workflow.run_instruction("second run"))
+    _run(controller._run_instruction("second run"))
     assert resume_ids[1] == "session-new"
 
 

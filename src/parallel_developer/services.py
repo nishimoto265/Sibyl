@@ -118,15 +118,6 @@ class TmuxLayoutManager:
         self._send_command(pane_id, command)
         self._maybe_wait()
 
-    def launch_boss_session(self, *, pane_id: str) -> None:
-        codex = self._codex_command("codex")
-        command = (
-            f"cd {shlex.quote(str(self.boss_path))} && "
-            f"{codex}"
-        )
-        self._send_command(pane_id, command)
-        self._maybe_wait()
-
     def resume_session(self, *, pane_id: str, workdir: Path, session_id: str) -> None:
         codex = self._codex_command(f"codex resume {shlex.quote(str(session_id))}")
         command = (
@@ -188,10 +179,6 @@ class TmuxLayoutManager:
 
     def send_instruction_to_pane(self, *, pane_id: str, instruction: str) -> None:
         self._send_text(pane_id, instruction)
-
-    def send_instruction_to_workers(self, fork_map: Mapping[str, str], instruction: str) -> None:
-        for pane_id in fork_map:
-            self._send_text(pane_id, instruction)
 
     def prepare_for_instruction(self, *, pane_id: str) -> None:
         pane = self._get_pane(pane_id)
@@ -388,14 +375,6 @@ class WorktreeManager:
         if self._repo.is_dirty(untracked_files=False):
             raise RuntimeError("Main repository has uncommitted changes; cannot merge results.")
         self._repo.git.merge(branch_name, "--ff-only")
-
-    def dispose(self) -> None:
-        if not self.session_namespace:
-            return
-        if self._session_root.exists():
-            shutil.rmtree(self._session_root, ignore_errors=True)
-        self._initialized = False
-        self._worker_paths = {}
 
     def _resolve_session_root(self) -> Path:
         base = self._storage_root / ".parallel-dev"

@@ -601,3 +601,14 @@
   - uv run pytest tests/tmux_manager_test.py
   result: tests 3 passed
   notes: 実行パターンによっては更に小さくできる可能性があるが、まずは安定動作が確認できた50msを新しい既定値に設定
+- date: '2025-11-09'
+  time_utc: '04:59:45'
+  summary: WorkflowManagerを統合し未使用サービスAPIを整理
+  details:
+  - WorkflowManager.run_instructionの処理をCLIController._run_instructionへ直接移植し、workflow.pyを削除
+  - controller/workflowテストを更新し、インライン化した実行ループやキャンセル再実行の挙動を担保
+  - TmuxLayoutManagerのlaunch_boss_session/send_instruction_to_workersとWorktreeManager.disposeを削除し、tmux_manager_testを整備
+  reproduce:
+  - uv run pytest
+  result: tests 104 passed
+  notes: Textual UI経由のイベントハンドラは既存のままでCLI外部API互換性に影響なし

@@ -108,12 +108,8 @@ def test_tmux_layout_manager_allocates_panes(monkeypatch_server):
     assert ("select-pane", "-t", "%3", "-T", "WORKER-2") in session_cmds
 
     manager.launch_main_session(pane_id=layout["main"])
-    manager.launch_boss_session(pane_id=layout["boss"])
     manager.send_instruction_to_pane(pane_id=layout["main"], instruction="echo main")
     manager.interrupt_pane(pane_id=layout["main"])
-
-    initial_map = {layout["workers"][0]: "session-worker-1"}
-    manager.send_instruction_to_workers(fork_map=initial_map, instruction="echo worker")
 
     worker_paths = {
         layout["workers"][0]: Path("/repo/.parallel-dev/sessions/session-a/worktrees/worker-1"),

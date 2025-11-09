@@ -27,8 +27,6 @@ from .settings_store import (
     resolve_settings_path,
     resolve_worktree_root,
 )
-from .workflow import WorkflowManager
-
 
 def _ensure_logs_directory(identifier: str) -> Path:
     """Create and return the logs directory for the given identifier."""
@@ -260,7 +258,6 @@ class CLIController:
         self._pre_cycle_selected_session: Optional[str] = None
         self._pre_cycle_selected_session_set: bool = False
         self._command_specs: Dict[str, CommandSpecEntry] = self._build_command_specs()
-        self._workflow = WorkflowManager(self)
 
     async def handle_input(self, user_input: str) -> None:
         raw_text = user_input.rstrip("\n")
@@ -1046,7 +1043,115 @@ class CLIController:
         self._config.reuse_existing_session = True
 
     async def _run_instruction(self, instruction: str) -> None:
-        await self._workflow.run_instruction(instruction)
+        if self._running:
+            self._emit("log", {"text": "別の指示を処理中です。完了を待ってから再度実行してください。"})
+            return
+        if self._selection_context:
+            self._emit("log", {"text": "候補選択待ちです。/pick <n> で選択してください。"})
+            return
+
+        self._maybe_auto_commit()
+
+        self._cycle_counter += 1
+        cycle_id = self._cycle_counter
+        self._current_cycle_id = cycle_id
+        self._running = True
+        self._emit_status("メインセッションを準備中...")
+        self._active_main_session_id = None
+        self._pre_cycle_selected_session = self._last_selected_session
+        self._pre_cycle_selected_session_set = True
+
+        logs_dir = self._create_cycle_logs_dir()
+
+        orchestrator = self._builder(
+            worker_count=self._config.worker_count,
+            log_dir=logs_dir,
+            session_name=self._config.tmux_session,
+            reuse_existing_session=self._config.reuse_existing_session,
+            session_namespace=self._session_namespace,
+            boss_mode=self._config.boss_mode,
+            project_root=self._worktree_root,
+            worktree_storage_root=self._worktree_storage_root,
+        )
+        self._active_orchestrator = orchestrator
+        self._last_tmux_manager = getattr(orchestrator, "_tmux", None)
+        main_hook = getattr(orchestrator, "set_main_session_hook", None)
+        if callable(main_hook):
+            main_hook(self._on_main_session_started)
+        worker_decider = getattr(orchestrator, "set_worker_decider", None)
+        if callable(worker_decider):
+            worker_decider(self._handle_worker_decision)
+
+        loop = asyncio.get_running_loop()
+
+        def selector(
+            candidates: List[CandidateInfo],
+            scoreboard: Optional[Dict[str, Dict[str, object]]] = None,
+        ) -> SelectionDecision:
+            return self._select_candidates(candidates, scoreboard)
+
+        resume_session = self._last_selected_session
+
+        def run_cycle() -> OrchestrationResult:
+            return orchestrator.run_cycle(
+                instruction,
+                selector=selector,
+                resume_session_id=resume_session,
+            )
+
+        auto_attach_task: Optional[asyncio.Task[None]] = None
+        cancelled = False
+        try:
+            self._emit("log", {"text": f"指示を開始: {instruction}"})
+            if self._attach_mode == "auto":
+                auto_attach_task = asyncio.create_task(self._handle_attach_command(force=False))
+            result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
+            if cycle_id in self._cancelled_cycles:
+                cancelled = True
+                self._cancelled_cycles.discard(cycle_id)
+            else:
+                self._last_scoreboard = dict(result.sessions_summary)
+                self._last_instruction = instruction
+                self._last_selected_session = result.selected_session
+                self._active_main_session_id = result.selected_session
+                self._config.reuse_existing_session = True
+                self._emit("scoreboard", {"scoreboard": self._last_scoreboard})
+                self._emit("log", {"text": "指示が完了しました。"})
+                if result.artifact:
+                    manifest = self._build_manifest(result, logs_dir)
+                    self._manifest_store.save_manifest(manifest)
+                    self._emit("log", {"text": f"セッションを保存しました: {manifest.session_id}"})
+                self._record_cycle_snapshot(result, cycle_id)
+        except Exception as exc:  # pylint: disable=broad-except
+            self._emit("log", {"text": f"エラーが発生しました: {exc}"})
+        finally:
+            self._selection_context = None
+            if self._current_cycle_id == cycle_id:
+                self._current_cycle_id = None
+            self._running = False
+            self._awaiting_continuation_input = False
+            if self._continuation_input_future and not self._continuation_input_future.done():
+                self._continuation_input_future.set_result("")
+            self._continuation_input_future = None
+            if cancelled:
+                self._emit_status("待機中")
+                self._emit_pause_state()
+                self._perform_revert(silent=True)
+            else:
+                self._emit_status("一時停止中" if self._paused else "待機中")
+                self._emit_pause_state()
+            if auto_attach_task:
+                try:
+                    await auto_attach_task
+                except Exception:  # noqa: BLE001
+                    pass
+            self._pre_cycle_selected_session = None
+            self._pre_cycle_selected_session_set = False
+
+        if cancelled and self._queued_instruction:
+            queued = self._queued_instruction
+            self._queued_instruction = None
+            await self._run_instruction(queued)
 
     def _resolve_selection(self, index: int) -> None:
         if not self._selection_context:
