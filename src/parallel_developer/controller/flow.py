@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional, TYPE_CHECKING
 
-from .controller_events import ControllerEventType
-from .orchestrator import CycleLayout, WorkerDecision
+from .events import ControllerEventType
+from ..orchestrator import CycleLayout, WorkerDecision
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .controller import CLIController
+    from . import CLIController
 
 
 class WorkerFlowHelper:

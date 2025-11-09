@@ -20,8 +20,8 @@ from textual.widgets import Footer, Header, OptionList
 from textual.widgets.option_list import Option
 
 from .controller import CLIController, SessionMode, build_orchestrator
-from .controller_commands import CommandOption, CommandSuggestion
-from .controller_events import ControllerEventType
+from .controller.commands import CommandOption, CommandSuggestion
+from .controller.events import ControllerEventType
 from .stores import ManifestStore
 from .ui.widgets import (
     CommandHint,

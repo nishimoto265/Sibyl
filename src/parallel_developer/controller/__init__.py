@@ -18,14 +18,14 @@ from subprocess import PIPE
 
 import git
 
-from .controller_commands import CommandOption, CommandSpecEntry, CommandSuggestion, build_command_specs
-from .controller_events import ControllerEventType
-from .controller_flow import WorkerFlowHelper
-from .controller_pause import PauseHelper
-from .controller_history import HistoryManager
-from .orchestrator import BossMode, CandidateInfo, CycleLayout, OrchestrationResult, Orchestrator, SelectionDecision, WorkerDecision
-from .services import CodexMonitor, LogManager, TmuxLayoutManager, WorktreeManager
-from .stores import (
+from .commands import CommandOption, CommandSpecEntry, CommandSuggestion, build_command_specs
+from .events import ControllerEventType
+from .flow import WorkerFlowHelper
+from .pause import PauseHelper
+from .history import HistoryManager
+from ..orchestrator import BossMode, CandidateInfo, CycleLayout, OrchestrationResult, Orchestrator, SelectionDecision, WorkerDecision
+from ..services import CodexMonitor, LogManager, TmuxLayoutManager, WorktreeManager
+from ..stores import (
     ManifestStore,
     PaneRecord,
     SessionManifest,
@@ -798,6 +798,14 @@ class CLIController:
 
     def history_reset(self) -> None:
         self._history.reset_cursor()
+
+    @property
+    def _cycle_history(self) -> List[Dict[str, object]]:
+        return self._history._cycle_history
+
+    @_cycle_history.setter
+    def _cycle_history(self, value: List[Dict[str, object]]) -> None:
+        self._history.set_cycle_history(value)
 
     def _perform_revert(self, silent: bool = False) -> None:
         tmux_manager = self._last_tmux_manager

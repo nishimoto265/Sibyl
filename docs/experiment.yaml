@@ -637,7 +637,7 @@
   notes: 今後サービス単位での変更が追いやすくなり、関心分離ルールに沿った構造に整理
 - date: '2025-11-09'
   time_utc: '08:03:27'
-  summary: CLIコマンド定義をcontroller_commandsへ分離
+  summary: CLIコマンド定義をcontroller/commandsへ分離
   details:
   - CommandSuggestion/CommandOption/CommandSpecEntryとコマンド定義辞書を新モジュールへ抽出し、CLIController本体の責務を軽量化
   - Textual CLIは新モジュールから型を参照するよう更新し、既存UIロジックに影響を与えずに依存を整理
@@ -657,3 +657,14 @@
   - uv run pytest
   result: tests 116 passed
   notes: フロー制御・永続化・イベントの責務が分けられ、残タスクのリファクタでも影響範囲を局所化できる状態になった
+- date: '2025-11-09'
+  time_utc: '08:52:33'
+  summary: controller配下をサブパッケージ化しドキュメント整備
+  details:
+  - controller/__init__.py を中心に commands/events/flow/history/pause/workflow_runner を `controller/` ディレクトリへ再配置
+  - PauseHelper/HistoryManager導入後も `_cycle_history` 互換プロパティを用意し、既存テストとの互換性を確保
+  - docs/requirement.yaml に ControllerEventType と stores 仕様の要約を追記
+  reproduce:
+  - uv run pytest
+  result: tests 116 passed
+  notes: controller関連ファイルの配置が明確になり、追加の責務分離や将来のGUI/API拡張に備えた構造が整った

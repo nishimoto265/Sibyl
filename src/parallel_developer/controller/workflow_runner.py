@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 from typing import Dict, List, Optional, TYPE_CHECKING
 
-from .orchestrator import CandidateInfo, OrchestrationResult, SelectionDecision
+from .events import ControllerEventType
+from ..orchestrator import CandidateInfo, OrchestrationResult, SelectionDecision
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .controller import CLIController
+    from . import CLIController
 
 
 class WorkflowRunner:
@@ -20,10 +21,10 @@ class WorkflowRunner:
     async def run(self, instruction: str) -> None:
         c = self._controller
         if c._running:
-            c._emit("log", {"text": "別の指示を処理中です。完了を待ってから再度実行してください。"})
+            c._emit(ControllerEventType.LOG, {"text": "別の指示を処理中です。完了を待ってから再度実行してください。"})
             return
         if c._selection_context:
-            c._emit("log", {"text": "候補選択待ちです。/pick <n> で選択してください。"})
+            c._emit(ControllerEventType.LOG, {"text": "候補選択待ちです。/pick <n> で選択してください。"})
             return
 
         c._maybe_auto_commit()
@@ -78,7 +79,7 @@ class WorkflowRunner:
         auto_attach_task: Optional[asyncio.Task[None]] = None
         cancelled = False
         try:
-            c._emit("log", {"text": f"指示を開始: {instruction}"})
+            c._emit(ControllerEventType.LOG, {"text": f"指示を開始: {instruction}"})
             if c._attach_mode == "auto":
                 auto_attach_task = asyncio.create_task(c._handle_attach_command(force=False))
             result: OrchestrationResult = await loop.run_in_executor(None, run_cycle)
@@ -91,15 +92,15 @@ class WorkflowRunner:
                 c._last_selected_session = result.selected_session
                 c._active_main_session_id = result.selected_session
                 c._config.reuse_existing_session = True
-                c._emit("scoreboard", {"scoreboard": c._last_scoreboard})
-                c._emit("log", {"text": "指示が完了しました。"})
+                c._emit(ControllerEventType.SCOREBOARD, {"scoreboard": c._last_scoreboard})
+                c._emit(ControllerEventType.LOG, {"text": "指示が完了しました。"})
                 if result.artifact:
                     manifest = c._build_manifest(result, logs_dir)
                     c._manifest_store.save_manifest(manifest)
-                    c._emit("log", {"text": f"セッションを保存しました: {manifest.session_id}"})
+                    c._emit(ControllerEventType.LOG, {"text": f"セッションを保存しました: {manifest.session_id}"})
                 c._record_cycle_snapshot(result, cycle_id)
         except Exception as exc:  # noqa: BLE001
-            c._emit("log", {"text": f"エラーが発生しました: {exc}"})
+            c._emit(ControllerEventType.LOG, {"text": f"エラーが発生しました: {exc}"})
         finally:
             c._selection_context = None
             if c._current_cycle_id == cycle_id:

@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover - 型チェックのみ
-    from .controller import CLIController, FlowMode, BossMode
+from typing import Awaitable, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -32,10 +29,10 @@ class CommandSpecEntry:
 
 
 def build_command_specs(
-    controller: "CLIController",
+    controller,
     *,
-    flow_mode_cls: "FlowMode",
-    boss_mode_cls: "BossMode",
+    flow_mode_cls,
+    boss_mode_cls,
 ) -> Dict[str, CommandSpecEntry]:
     FlowMode = flow_mode_cls  # alias for brevity
     return {

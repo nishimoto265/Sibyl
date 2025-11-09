@@ -7,10 +7,10 @@ import subprocess
 from subprocess import PIPE
 from typing import List, Optional, TYPE_CHECKING
 
-from .controller_events import ControllerEventType
+from .events import ControllerEventType
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .controller import CLIController
+    from . import CLIController
 
 
 class PauseHelper:

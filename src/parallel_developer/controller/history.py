@@ -65,3 +65,6 @@ class HistoryManager:
         if not self._cycle_history:
             return None
         return self._cycle_history.pop()
+
+    def set_cycle_history(self, history_list: List[Dict[str, object]]) -> None:
+        self._cycle_history = history_list
