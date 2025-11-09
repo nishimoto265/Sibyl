@@ -585,6 +585,7 @@
   - CLIController._handle_worker_decision を WorkerDecision を返す実装に改め、/continue→追加指示入力→完了検知の流れを同期的に制御
   - Textual UI で追加指示入力中はコマンドを受け付けないようガードし、キャンセル時はフラグ状態をリセット
   - 追加指示送信時はCtrl+Cを再送しないよう変更し、Codexセッションが不要に終了しないことを保証
+  - 追加入力には余計なテンプレートを付さず、ユーザーが入力したそのままのテキストだけをワーカーへ送るように修正
   - orchestrator/controller/workflow テスト群を更新し、継続ループや追加指示入力の振る舞いを検証
   reproduce:
   - uv run pytest

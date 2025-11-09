@@ -488,26 +488,15 @@ class Orchestrator:
         user_instruction: str,
         signal_flags: Mapping[str, Path],
     ) -> None:
-        trimmed = user_instruction.strip()
+        trimmed = user_instruction.rstrip("\n")
         for pane_id in layout.worker_panes:
             worker_name = layout.pane_to_worker.get(pane_id)
             worker_path = layout.pane_to_path.get(pane_id)
             if not worker_name or worker_path is None:
                 continue
-            completion_flag = signal_flags.get(worker_name)
-            location_notice = self._worktree_location_notice(custom_path=worker_path)
-            continuation = (
-                f"追加指示です。以下の内容を進めてください:\n{trimmed}\n"
-                "これまでの作業内容はそのまま保持して構いません。"
-            )
-            message = self._ensure_done_directive(
-                continuation,
-                location_notice=location_notice,
-                completion_flag=completion_flag,
-            )
             self._tmux.send_instruction_to_pane(
                 pane_id=pane_id,
-                instruction=message,
+                instruction=trimmed,
             )
 
     def _await_worker_completion(
