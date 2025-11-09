@@ -198,6 +198,172 @@ def test_monitor_detects_new_sessions(tmp_path: Path):
     assert mapping == {"pane-worker-2": "session-worker-2"}
 
 
+def test_monitor_register_new_rollout_skips_reserved_sessions(tmp_path: Path):
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    codex_root = tmp_path / "codex"
+    codex_root.mkdir(parents=True, exist_ok=True)
+
+    owner_map = shared_dir / "owner.yaml"
+    target_map = shared_dir / "target.yaml"
+
+    owner_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=owner_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="ns-owner",
+    )
+    target_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=target_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="ns-target",
+    )
+
+    baseline = target_monitor.snapshot_rollouts()
+
+    conflict_path = codex_root / "2025" / "11" / "09" / "rollout-conflict.jsonl"
+    conflict_path.parent.mkdir(parents=True, exist_ok=True)
+    conflict_path.write_text(
+        json.dumps({
+            "type": "session_meta",
+            "payload": {
+                "id": "session-conflict",
+                "timestamp": "2025-11-09T03:10:00Z",
+                "cwd": "/repo",
+                "originator": "codex_cli_rs",
+                "cli_version": "0.46.0",
+                "instructions": "",
+                "source": "cli",
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    owner_monitor.register_session(
+        pane_id="pane-owner",
+        session_id="session-conflict",
+        rollout_path=conflict_path,
+    )
+
+    time.sleep(0.01)
+
+    target_path = codex_root / "2025" / "11" / "09" / "rollout-target.jsonl"
+    target_path.write_text(
+        json.dumps({
+            "type": "session_meta",
+            "payload": {
+                "id": "session-target",
+                "timestamp": "2025-11-09T03:11:00Z",
+                "cwd": "/repo",
+                "originator": "codex_cli_rs",
+                "cli_version": "0.46.0",
+                "instructions": "",
+                "source": "cli",
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    session_id = target_monitor.register_new_rollout(
+        pane_id="pane-target",
+        baseline=baseline,
+        timeout_seconds=0.2,
+    )
+
+    assert session_id == "session-target"
+    target_mapping = yaml.safe_load(target_map.read_text(encoding="utf-8"))
+    assert "session-conflict" not in target_mapping.get("sessions", {})
+    assert target_mapping["sessions"]["session-target"]["pane_id"] == "pane-target"
+
+
+def test_monitor_register_worker_rollouts_skip_reserved_sessions(tmp_path: Path):
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    codex_root = tmp_path / "codex"
+    codex_root.mkdir(parents=True, exist_ok=True)
+
+    owner_map = shared_dir / "owner.yaml"
+    target_map = shared_dir / "target.yaml"
+
+    owner_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=owner_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="ns-owner",
+    )
+    target_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=target_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="ns-target",
+    )
+
+    baseline = target_monitor.snapshot_rollouts()
+
+    conflict_path = codex_root / "2025" / "11" / "09" / "rollout-conflict.jsonl"
+    conflict_path.parent.mkdir(parents=True, exist_ok=True)
+    conflict_path.write_text(
+        json.dumps({
+            "type": "session_meta",
+            "payload": {
+                "id": "session-conflict",
+                "timestamp": "2025-11-09T03:20:00Z",
+                "cwd": "/repo",
+                "originator": "codex_cli_rs",
+                "cli_version": "0.46.0",
+                "instructions": "",
+                "source": "cli",
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    owner_monitor.register_session(
+        pane_id="pane-owner",
+        session_id="session-conflict",
+        rollout_path=conflict_path,
+    )
+
+    worker_meta = []
+    for index in range(2):
+        time.sleep(0.01)
+        path = codex_root / "2025" / "11" / "09" / f"rollout-worker-{index}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({
+                "type": "session_meta",
+                "payload": {
+                    "id": f"session-worker-{index}",
+                    "timestamp": f"2025-11-09T03:2{index}:00Z",
+                    "cwd": f"/repo-{index}",
+                    "originator": "codex_cli_rs",
+                    "cli_version": "0.46.0",
+                    "instructions": "",
+                    "source": "cli",
+                },
+            })
+            + "\n",
+            encoding="utf-8",
+        )
+        worker_meta.append((f"pane-{index+1}", f"session-worker-{index}"))
+
+    mapping = target_monitor.register_worker_rollouts(
+        worker_panes=[name for name, _ in worker_meta],
+        baseline=baseline,
+        timeout_seconds=0.5,
+    )
+
+    assert mapping == {name: session_id for name, session_id in worker_meta}
+
+
 def test_monitor_worker_rollouts_timeout(tmp_path: Path):
     session_map = tmp_path / "sessions_map.yaml"
     codex_root = tmp_path / "codex"

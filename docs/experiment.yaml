@@ -566,3 +566,14 @@
   - uv run pytest
   result: tests 97 passed
   notes: 実際のBossペインでJSONを返した際に自動で遷移することを手動で確認済み
+- date: '2025-11-09'
+  time_utc: '03:38:38'
+  summary: Codexセッション予約の競合を回避して並列起動を安定化
+  details:
+  - CodexMonitor.register_sessionでセッション予約を先に取得し、失敗時にセッションマップへ不要な書き込みが残らないようにした
+  - SessionReservationErrorを導入し、register_new_rollout/register_worker_rolloutsが競合したrolloutをスキップしつつ未取得のセッションを待機するループを追加
+  - 競合再現用のmonitorテストを2件追加し、新しい再試行フローでAuto Select並列起動時でも例外にならないことを検証
+  reproduce:
+  - uv run pytest
+  result: tests 101 passed
+  notes: 並列pdevインスタンス間で同じCodex rolloutを検出しても後続インスタンスが待機して次のセッションを拾えることを手元で確認

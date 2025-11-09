@@ -9,11 +9,23 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Union
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Union
 
 import git
 import libtmux
 import yaml
+
+
+class SessionReservationError(RuntimeError):
+    """Raised when a Codex session rollout is already owned by another namespace."""
+
+    def __init__(self, session_id: str, owner_namespace: Optional[str]) -> None:
+        self.session_id = session_id
+        self.owner_namespace = owner_namespace or "unknown"
+        super().__init__(
+            f"Codex session {session_id} is currently reserved by namespace '{self.owner_namespace}'. "
+            "別の parallel-dev インスタンスが使用中のため、処理を中断します。"
+        )
 
 
 class TmuxLayoutManager:
@@ -429,14 +441,17 @@ class CodexMonitor:
         self._active_signal_paths: Dict[str, Path] = {}
 
     def register_session(self, *, pane_id: str, session_id: str, rollout_path: Path) -> None:
-        data = self._load_map()
-        panes = data.setdefault("panes", {})
-        sessions = data.setdefault("sessions", {})
-        offset = 0
         try:
             offset = rollout_path.stat().st_size
         except OSError:
             offset = 0
+
+        self._reserve_session(session_id, rollout_path)
+
+        data = self._load_map()
+        panes = data.setdefault("panes", {})
+        sessions = data.setdefault("sessions", {})
+
         panes[pane_id] = {
             "session_id": session_id,
             "rollout_path": str(rollout_path),
@@ -448,7 +463,6 @@ class CodexMonitor:
             "offset": int(offset),
         }
         self._write_map(data)
-        self._reserve_session(session_id, rollout_path)
 
     def consume_session_until_eof(self, session_id: str) -> None:
         data = self._load_map()
@@ -559,13 +573,34 @@ class CodexMonitor:
         baseline: Mapping[Path, float],
         timeout_seconds: float = 30.0,
     ) -> str:
-        paths = self._wait_for_new_rollouts(baseline, expected=1, timeout_seconds=timeout_seconds)
-        if not paths:
-            raise TimeoutError("Failed to detect new Codex session rollout")
-        rollout_path = paths[0]
-        session_id = self._parse_session_meta(rollout_path)
-        self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=rollout_path)
-        return session_id
+        baseline_map: Dict[Path, float] = dict(baseline)
+        deadline = time.time() + timeout_seconds
+
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            paths = self._wait_for_new_rollouts(
+                baseline_map,
+                expected=1,
+                timeout_seconds=remaining,
+            )
+            if not paths:
+                break
+            for rollout_path in paths:
+                self._mark_rollout_seen(baseline_map, rollout_path)
+                session_id = self._parse_session_meta(rollout_path)
+                try:
+                    self.register_session(
+                        pane_id=pane_id,
+                        session_id=session_id,
+                        rollout_path=rollout_path,
+                    )
+                except SessionReservationError:
+                    continue
+                return session_id
+
+        raise TimeoutError("Failed to detect available Codex session rollout")
 
     def register_worker_rollouts(
         self,
@@ -576,21 +611,42 @@ class CodexMonitor:
     ) -> Dict[str, str]:
         if not worker_panes:
             return {}
-        paths = self._wait_for_new_rollouts(
-            baseline,
-            expected=len(worker_panes),
-            timeout_seconds=timeout_seconds,
-        )
-        paths = paths[: len(worker_panes)]
-        if len(paths) < len(worker_panes):
-            raise TimeoutError(
-                f"Detected {len(paths)} worker rollouts but {len(worker_panes)} required."
-            )
+
+        baseline_map: Dict[Path, float] = dict(baseline)
+        deadline = time.time() + timeout_seconds
         fork_map: Dict[str, str] = {}
-        for pane_id, path in zip(worker_panes, paths):
-            session_id = self._parse_session_meta(path)
-            self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=path)
-            fork_map[pane_id] = session_id
+
+        while len(fork_map) < len(worker_panes):
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            paths = self._wait_for_new_rollouts(
+                baseline_map,
+                expected=1,
+                timeout_seconds=remaining,
+            )
+            if not paths:
+                break
+            for path in paths:
+                self._mark_rollout_seen(baseline_map, path)
+                pane_index = len(fork_map)
+                if pane_index >= len(worker_panes):
+                    break
+                pane_id = worker_panes[pane_index]
+                session_id = self._parse_session_meta(path)
+                try:
+                    self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=path)
+                except SessionReservationError:
+                    continue
+                fork_map[pane_id] = session_id
+                if len(fork_map) == len(worker_panes):
+                    break
+
+        if len(fork_map) < len(worker_panes):
+            raise TimeoutError(
+                f"Detected {len(fork_map)} worker rollouts but {len(worker_panes)} required."
+            )
+
         return fork_map
 
     def get_last_assistant_message(self, session_id: str) -> Optional[str]:
@@ -812,10 +868,7 @@ class CodexMonitor:
                     except OSError:
                         break
                     continue
-                raise RuntimeError(
-                    f"Codex session {session_id} is currently reserved by namespace '{owner_ns}'. "
-                    "別の parallel-dev インスタンスが使用中のため、処理を中断します。"
-                )
+                raise SessionReservationError(session_id, owner_ns)
             except OSError:
                 return
 
@@ -877,6 +930,12 @@ class CodexMonitor:
 
         if last_size > baseline:
             self._update_session_offset(session_id, last_size)
+
+    def _mark_rollout_seen(self, baseline: MutableMapping[Path, float], path: Path) -> None:
+        try:
+            baseline[path] = path.stat().st_mtime
+        except OSError:
+            baseline[path] = time.time()
 
     def _wait_for_new_rollouts(
         self,
