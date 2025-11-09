@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from parallel_developer.controller import CLIController, FlowMode
-from parallel_developer.orchestrator import CandidateInfo, CycleLayout, OrchestrationResult, BossMode
+from parallel_developer.orchestrator import CandidateInfo, CycleArtifact, CycleLayout, OrchestrationResult, BossMode
 from parallel_developer.session_manifest import ManifestStore
 
 
@@ -183,6 +183,66 @@ def test_first_cycle_cancel_keeps_current_session(base_controller):
 
     _run(controller._run_instruction("second run"))
     assert resume_ids[1] == "session-new"
+
+
+def test_run_instruction_triggers_auto_attach(base_controller):
+    controller, _ = base_controller
+    controller._attach_mode = "auto"
+    attach_calls = []
+
+    async def fake_attach(**kwargs):
+        attach_calls.append(kwargs)
+
+    controller._handle_attach_command = fake_attach  # type: ignore[assignment]
+
+    result = OrchestrationResult(selected_session="session-main", sessions_summary={"main": {"selected": True}})
+    controller._builder = lambda **_: DummyOrchestrator(controller, result)
+
+    _run(controller._run_instruction("auto attach check"))
+
+    assert attach_calls == [{"force": False}]
+
+
+def test_run_instruction_saves_manifest_when_artifact_present(base_controller, tmp_path):
+    controller, _ = base_controller
+    artifact = CycleArtifact(
+        main_session_id="session-main",
+        worker_sessions={"worker-1": "session-worker-1"},
+        boss_session_id=None,
+        worker_paths={"worker-1": tmp_path / "worker-1"},
+        boss_path=None,
+        instruction="build feature",
+        tmux_session="parallel-dev",
+    )
+    artifact.selected_session_id = "session-worker-1"
+    result = OrchestrationResult(
+        selected_session="session-worker-1",
+        sessions_summary={"worker-1": {"selected": True}},
+        artifact=artifact,
+    )
+    manifest_object = object()
+    controller._build_manifest = Mock(return_value=manifest_object)  # type: ignore[assignment]
+    controller._manifest_store.save_manifest = Mock()  # type: ignore[assignment]
+    controller._builder = lambda **_: DummyOrchestrator(controller, result)
+
+    _run(controller._run_instruction("persist manifest"))
+
+    controller._manifest_store.save_manifest.assert_called_once_with(manifest_object)  # type: ignore[attr-defined]
+
+
+def test_run_instruction_cancelled_invokes_revert(base_controller):
+    controller, _ = base_controller
+
+    def during_run():
+        controller._cancelled_cycles.add(controller._cycle_counter)
+
+    controller._perform_revert = Mock()  # type: ignore[assignment]
+    result = OrchestrationResult(selected_session="session-main", sessions_summary={})
+    controller._builder = lambda **_: DummyOrchestrator(controller, result, during_run=during_run)
+
+    _run(controller._run_instruction("cancel cycle"))
+
+    controller._perform_revert.assert_called_once_with(silent=True)  # type: ignore[attr-defined]
 
 
 def test_flow_auto_review_skips_worker_prompt(base_controller):

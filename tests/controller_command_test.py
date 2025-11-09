@@ -3,10 +3,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import yaml
 
 from parallel_developer.controller import CLIController, FlowMode
 from parallel_developer.orchestrator import BossMode, CandidateInfo, OrchestrationResult
 from parallel_developer.session_manifest import PaneRecord, SessionManifest, SessionReference
+from parallel_developer.settings_store import SettingsStore
 
 
 def _run(coro):
@@ -231,3 +233,67 @@ def test_flow_command_updates_mode(controller, event_recorder):
     events.clear()
     _run(controller.execute_command("/flow", "invalid"))
     assert any("使い方" in payload.get("text", "") for event, payload in events if event == "log")
+
+
+def test_settings_store_loads_and_saves_yaml(tmp_path):
+    cfg = tmp_path / "settings.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "commands": {
+                    "attach": "manual",
+                    "boss": "rewrite",
+                    "flow": "auto_review",
+                    "parallel": "4",
+                    "mode": "main",
+                    "commit": "auto",
+                },
+                "paths": {"worktree_root": "/repo/work"},
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    store = SettingsStore(cfg)
+    assert store.attach == "manual"
+    assert store.boss == "rewrite"
+    assert store.worktree_root == "/repo/work"
+
+    store.parallel = "5"
+    data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert data["commands"]["parallel"] == "5"
+
+
+def test_settings_store_update_snapshot(tmp_path):
+    cfg = tmp_path / "settings.yaml"
+    store = SettingsStore(cfg)
+    store.update(attach="manual", worktree_root="/workspace")
+    snapshot = store.snapshot()
+    assert snapshot["commands"]["attach"] == "manual"
+    assert snapshot["paths"]["worktree_root"] == "/workspace"
+    assert cfg.read_text(encoding="utf-8")
+
+
+def test_settings_store_legacy_keys(tmp_path):
+    cfg = tmp_path / "legacy.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "attach_mode": "manual",
+                "boss_mode": "rewrite",
+                "flow_mode": "auto_select",
+                "worker_count": "2",
+                "session_mode": "main",
+                "auto_commit": True,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    store = SettingsStore(cfg)
+    assert store.attach == "manual"
+    assert store.boss == "rewrite"
+    assert store.flow == "auto_select"
+    assert store.parallel == "2"
+    assert store.mode == "main"
+    assert store.commit == "auto"

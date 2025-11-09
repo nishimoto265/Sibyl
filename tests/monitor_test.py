@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from parallel_developer.services import CodexMonitor
+from parallel_developer.services import CodexMonitor, SessionReservationError
 
 
 def test_monitor_registers_and_logs_instruction(tmp_path: Path):
@@ -382,3 +382,70 @@ def test_monitor_worker_rollouts_timeout(tmp_path: Path):
             baseline=baseline,
             timeout_seconds=0.05,
         )
+
+
+def test_register_session_rejects_reserved_rollout(tmp_path: Path):
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    codex_root = tmp_path / "codex"
+    codex_root.mkdir(parents=True, exist_ok=True)
+    rollout = codex_root / "2025" / "11" / "09" / "rollout.jsonl"
+    rollout.parent.mkdir(parents=True, exist_ok=True)
+    rollout.write_text("", encoding="utf-8")
+
+    owner_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=shared_dir / "owner.yaml",
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="owner",
+    )
+    target_monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=shared_dir / "target.yaml",
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="target",
+    )
+
+    owner_monitor.register_session(
+        pane_id="pane-owner",
+        session_id="session-reserved",
+        rollout_path=rollout,
+    )
+
+    with pytest.raises(SessionReservationError):
+        target_monitor.register_session(
+            pane_id="pane-target",
+            session_id="session-reserved",
+            rollout_path=rollout,
+        )
+
+
+def test_await_completion_uses_signal_flags(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=tmp_path / "codex",
+        poll_interval=0.01,
+        session_namespace="signal-test",
+    )
+    rollout = tmp_path / "sessions" / "rollout-signal.jsonl"
+    rollout.parent.mkdir(parents=True, exist_ok=True)
+    rollout.write_text("", encoding="utf-8")
+
+    monitor.register_session(pane_id="pane-signal", session_id="session-signal", rollout_path=rollout)
+
+    flag_path = tmp_path / "signals" / "session-signal.done"
+    flag_path.parent.mkdir(parents=True, exist_ok=True)
+    flag_path.write_text("", encoding="utf-8")
+
+    completion = monitor.await_completion(
+        session_ids=["session-signal"],
+        timeout_seconds=0.2,
+        signal_paths={"session-signal": flag_path},
+    )
+
+    assert completion["session-signal"]["done"] is True
+    assert "session-signal" not in monitor._active_signal_paths  # type: ignore[attr-defined]

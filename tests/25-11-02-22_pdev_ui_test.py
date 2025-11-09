@@ -190,6 +190,35 @@ async def test_command_palette_arrow_moves_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_command_palette_limits_to_seven_items() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        await pilot.press("/")
+        await pilot.pause()
+        palette = app.query_one("#command-palette", CommandPalette)
+        assert palette.display is True
+        assert 0 < len(palette._items) <= 7
+
+
+@pytest.mark.asyncio
+async def test_command_palette_reopens_after_input_cleared() -> None:
+    app = ParallelDeveloperApp()
+    async with app.run_test() as pilot:  # type: ignore[attr-defined]
+        await pilot.pause()
+        await pilot.press("/")
+        await pilot.pause()
+        palette = app.query_one("#command-palette", CommandPalette)
+        assert palette.display is True
+        await pilot.press("backspace")
+        await pilot.pause()
+        assert palette.display is False
+        await pilot.press("/")
+        await pilot.pause()
+        assert palette.display is True
+
+
+@pytest.mark.asyncio
 async def test_tab_keeps_focus_on_command_input() -> None:
     app = ParallelDeveloperApp()
     async with app.run_test() as pilot:  # type: ignore[attr-defined]
@@ -493,3 +522,49 @@ async def test_status_then_log_shrink_before_command() -> None:
         assert medium[2] == large[2]
         assert small[1] < medium[1]
         assert small[2] <= medium[2]
+
+
+def test_copy_log_to_clipboard_prefers_selection(monkeypatch) -> None:
+    app = ParallelDeveloperApp()
+
+    class DummyLog:
+        def __init__(self) -> None:
+            self.text_selection = object()
+            self.entries = ["alpha", "beta"]
+
+        def get_selection(self, selection):
+            return ("alpha\nbeta", "\n")
+
+    app.log_panel = DummyLog()  # type: ignore[assignment]
+    recorded: list[str] = []
+    system_calls: list[str] = []
+    app.copy_to_clipboard = lambda text: recorded.append(text)  # type: ignore[assignment]
+    app._copy_to_system_clipboard = lambda text: system_calls.append(text)  # type: ignore[assignment]
+    monkeypatch.setattr("parallel_developer.cli.shutil.which", lambda *_: None)
+
+    message = app._copy_log_to_clipboard()
+
+    assert "選択範囲" in message
+    assert recorded == ["alpha\nbeta"]
+    assert system_calls == ["alpha\nbeta"]
+
+
+def test_copy_log_to_clipboard_handles_empty_log(monkeypatch) -> None:
+    app = ParallelDeveloperApp()
+
+    class EmptyLog:
+        def __init__(self) -> None:
+            self.text_selection = None
+            self.entries = []
+
+        def get_selection(self, selection):
+            return None
+
+    app.log_panel = EmptyLog()  # type: ignore[assignment]
+    app.copy_to_clipboard = lambda _text: (_ for _ in ()).throw(AssertionError("should not copy"))  # type: ignore[assignment]
+    app._copy_to_system_clipboard = lambda _text: (_ for _ in ()).throw(AssertionError("should not run"))  # type: ignore[assignment]
+    monkeypatch.setattr("parallel_developer.cli.shutil.which", lambda *_: None)
+
+    message = app._copy_log_to_clipboard()
+
+    assert message == "コピー対象のログがありません。"

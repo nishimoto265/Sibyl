@@ -612,3 +612,15 @@
   - uv run pytest
   result: tests 104 passed
   notes: Textual UI経由のイベントハンドラは既存のままでCLI外部API互換性に影響なし
+- date: '2025-11-09'
+  time_utc: '07:47:23'
+  summary: コア機能のテストを拡充してリファクタ準備を強化
+  details:
+  - CLIController._run_instructionのオートアタッチ・キャンセル・マニフェスト保存経路をworkflow_testへ追加し、統合後の分岐をカバー
+  - SettingsStoreのYAML永続化/レガシーキー/スナップショットをcontroller_command_testで検証
+  - CodexMonitorのセッション予約競合・完了フラグ監視(signal flag)をmonitor_testへ追加して分散起動の安全性を担保
+  - Textual UIでのコマンドパレット行数制限・入力クリア時の挙動・ログコピーの選択優先ロジックをUIテスト化
+  reproduce:
+  - uv run pytest
+  result: tests 116 passed
+  notes: pytest-covを導入済みだが依存追加は不要、今後の大規模リファクタに向けて主要分岐の赤線を解消
