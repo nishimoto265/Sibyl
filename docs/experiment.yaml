@@ -624,3 +624,14 @@
   - uv run pytest
   result: tests 116 passed
   notes: pytest-covを導入済みだが依存追加は不要、今後の大規模リファクタに向けて主要分岐の赤線を解消
+- date: '2025-11-09'
+  time_utc: '07:59:13'
+  summary: services.py を責務単位でパッケージ化
+  details:
+  - 1ファイルに集約されていた Tmux/Worktree/CodexMonitor/LogManager を `parallel_developer/services/` 配下へ分離し、高凝集・疎結合を確保
+  - __init__ で従来APIを再エクスポートし、既存コード・テストの import 互換性を維持
+  - tmux_manager_test の monkeypatch 対象を新モジュールに合わせて更新
+  reproduce:
+  - uv run pytest
+  result: tests 116 passed
+  notes: 今後サービス単位での変更が追いやすくなり、関心分離ルールに沿った構造に整理

@@ -77,7 +77,7 @@ class DummyServer:
 @pytest.fixture
 def monkeypatch_server(monkeypatch):
     server = DummyServer()
-    monkeypatch.setattr("parallel_developer.services.libtmux.Server", lambda: server)
+    monkeypatch.setattr("parallel_developer.services.tmux_manager.libtmux.Server", lambda: server)
     return server
 
 
