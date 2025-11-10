@@ -334,8 +334,9 @@ def test_pull_main_after_auto_rebases_on_ff_failure(tmp_path, monkeypatch):
     assert any("--ff-only" in call for call in recorded)
     assert any("rev-parse" in call for call in recorded)
     assert any("--rebase" in call for call in recorded)
-    assert len(logs) == 1
+    assert len(logs) == 2
     assert "ff-only failed" in logs[0]
+    assert "git pull --rebase origin main で main を同期" in logs[1]
 
 
 def test_pull_main_after_auto_logs_conflict(tmp_path, monkeypatch):
@@ -368,8 +369,37 @@ def test_pull_main_after_auto_logs_conflict(tmp_path, monkeypatch):
 
     orchestrator._pull_main_after_auto()
 
-    assert any("pull --rebase origin main" in entry for entry in logs)
+    assert any("pull --rebase origin main が失敗" in entry for entry in logs)
     assert any("ff-only failed" in entry for entry in logs)
+
+
+def test_pull_main_after_auto_logs_ff_success(tmp_path, monkeypatch):
+    tmux = Mock()
+    worktree = Mock()
+    monitor = Mock()
+    log_manager = Mock()
+    logs: list[str] = []
+    worktree.root = tmp_path
+    orchestrator = Orchestrator(
+        tmux_manager=tmux,
+        worktree_manager=worktree,
+        monitor=monitor,
+        log_manager=log_manager,
+        worker_count=1,
+        session_name="parallel-dev",
+        log_hook=logs.append,
+    )
+
+    def fake_run(args, **kwargs):  # type: ignore[override]
+        if "--ff-only" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    orchestrator._pull_main_after_auto()
+
+    assert logs == ["[merge] ホスト側 git pull --ff-only で main を同期しました。"]
 
 
 def test_orchestrator_handles_worker_continuation(dependencies):

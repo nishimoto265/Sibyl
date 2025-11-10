@@ -127,7 +127,7 @@ def test_handle_merge_outcome_logging(controller, event_recorder):
         reason="agent_auto",
     )
     controller._handle_merge_outcome(delegate)
-    assert any("エージェント" in payload.get("text", "") for event, payload in events if event == "log")
+    assert any("Autoモード" in payload.get("text", "") for event, payload in events if event == "log")
 
 
 def test_status_and_scoreboard_commands(controller, event_recorder):

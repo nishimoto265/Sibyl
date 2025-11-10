@@ -808,6 +808,7 @@ class Orchestrator:
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            self._log_merge_sync("git pull --ff-only")
             return
         except subprocess.CalledProcessError as exc:  # noqa: PERF203
             self._log_git_failure("git pull --ff-only", exc)
@@ -822,6 +823,7 @@ class Orchestrator:
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            self._log_merge_sync(f"git pull --rebase {remote} {branch}")
             return
         except subprocess.CalledProcessError as exc:  # noqa: PERF203
             conflict_msg = (
@@ -855,6 +857,15 @@ class Orchestrator:
         if not self._log_hook:
             return
         message = f"[merge] ホスト側 {action} が失敗しました: {exc.stderr or exc.stdout or exc}"
+        try:
+            self._log_hook(message)
+        except Exception:
+            pass
+
+    def _log_merge_sync(self, action: str) -> None:
+        if not self._log_hook:
+            return
+        message = f"[merge] ホスト側 {action} で main を同期しました。"
         try:
             self._log_hook(message)
         except Exception:

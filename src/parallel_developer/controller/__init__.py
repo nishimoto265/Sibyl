@@ -1274,6 +1274,17 @@ class CLIController:
                 },
             )
             self._emit_status("統合作業待ち")
+        elif status == "delegate" and reason_key == "agent_auto":
+            self._emit(
+                ControllerEventType.LOG,
+                {
+                    "text": (
+                        f"[merge] Autoモード: {branch} の統合作業はエージェントが完了し、"
+                        "ホストは結果を同期済みです。問題があればログを確認してください。"
+                    )
+                },
+            )
+            self._emit_status("統合作業完了")
         elif status == "delegate":
             label = reason_labels.get(reason_key, reason_key or "手動統合に切り替え")
             detail = f" 詳細: {error}" if error else ""
