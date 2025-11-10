@@ -724,3 +724,14 @@
   - uv run pytest
   result: tests 123 passed
   notes: autoモードでもtouch完了プロトコルを維持し、ホストは完了通知を待ってからメインを再開する
+- date: '2025-11-10'
+  time_utc: '07:20:01'
+  summary: evening CLIスクリプトをbossワークツリーへ統合
+  details:
+  - worker-2案をベースにdev_test/25-11-10-16_evening.pyを整備し、詳細ログとGreetingデータクラスを実装
+  - dev_test/evening.pyを互換ラッパとして追加し、要件どおりのファイル名と最新実装の両立を確保
+  - uv run実行でCLI出力とlogs/25-11-10-16_evening.log生成を確認
+  reproduce:
+  - uv run python dev_test/evening.py Alice
+  result: Good evening, Alice. が標準出力され、DEBUG/INFOログがlogs/25-11-10-16_evening.logへ記録
+  notes: 追加の要件変更なし。必要に応じてrecipient引数を省略するとデフォルトの"there"を使用。
