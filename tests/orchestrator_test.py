@@ -290,6 +290,38 @@ def test_merge_strategy_fast_only_failure_marks_failed():
     assert outcome.error == "blocked"
 
 
+def test_boss_branch_is_merged_in_rewrite_mode():
+    tmux = Mock()
+    worktree = Mock()
+    monitor = Mock()
+    log_manager = Mock()
+    log_hook = Mock()
+    candidate = CandidateInfo(
+        key="boss",
+        label="boss",
+        session_id="session-boss",
+        branch="parallel-dev/session-a/boss",
+        worktree=Path("/tmp/boss"),
+    )
+    orchestrator = Orchestrator(
+        tmux_manager=tmux,
+        worktree_manager=worktree,
+        monitor=monitor,
+        log_manager=log_manager,
+        worker_count=1,
+        session_name="parallel-dev",
+        boss_mode=BossMode.REWRITE,
+        merge_strategy=MergeStrategy.FAST_ONLY,
+        log_hook=log_hook,
+    )
+
+    outcome = orchestrator._finalize_selection(selected=candidate, main_pane="pane-main")
+
+    worktree.merge_into_main.assert_called_once_with("parallel-dev/session-a/boss")
+    assert outcome.status == "merged"
+    log_hook.assert_called_with("[merge] ブランチ parallel-dev/session-a/boss を fast-forward で main に取り込みました。")
+
+
 def test_merge_failure_logs_message(dependencies):
     log_messages = []
     dependencies["worktree"].merge_into_main.side_effect = RuntimeError("dirty tree")

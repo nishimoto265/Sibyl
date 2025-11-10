@@ -671,7 +671,7 @@ class Orchestrator:
             status="skipped",
             branch=selected.branch,
         )
-        if selected.branch and selected.key != "boss":
+        if selected.branch:
             if self._merge_strategy == MergeStrategy.AGENT_ONLY:
                 merge_outcome.status = "delegate"
                 merge_outcome.reason = "strategy_agent_only"
@@ -680,6 +680,7 @@ class Orchestrator:
                 try:
                     self._worktree.merge_into_main(selected.branch)
                     merge_outcome.status = "merged"
+                    self._log_merge_success(selected.branch)
                 except Exception as exc:  # noqa: BLE001
                     message = f"[merge] ブランチ {selected.branch} のマージに失敗しました: {exc}"
                     if self._log_hook:
@@ -721,6 +722,15 @@ class Orchestrator:
         message = f"[merge] ブランチ {branch or 'N/A'} の統合作業をエージェントに委譲します ({label})."
         if error:
             message += f" 詳細: {error}"
+        try:
+            self._log_hook(message)
+        except Exception:
+            pass
+
+    def _log_merge_success(self, branch: Optional[str]) -> None:
+        if not self._log_hook:
+            return
+        message = f"[merge] ブランチ {branch or 'N/A'} を fast-forward で main に取り込みました。"
         try:
             self._log_hook(message)
         except Exception:

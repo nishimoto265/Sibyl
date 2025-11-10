@@ -691,3 +691,13 @@
   - uv run pytest
   result: tests 122 passed
   notes: /merge設定は~/.parallel-dev/config.yamlに永続化され、OSS公開時のデフォルト安全策としてfast_onlyを維持
+- date: '2025-11-09'
+  time_utc: '10:25:00'
+  summary: pip配布向けにパッケージ名と導入手順を整備
+  details:
+  - pyproject.tomlのproject.nameを`pdev`へ変更し、将来的に`pip install pdev`で導入できるようメタデータを揃えた
+  - READMEのセットアップ章を更新し、PyPI経由（pip install pdev → pdev）とソース/ローカル開発パターンを整理
+  reproduce:
+  - uv run pytest
+  result: tests 122 passed
+  notes: PyPI公開は未実施。今後公開すれば`pip install pdev`だけでCLIが起動できる
