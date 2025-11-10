@@ -11,3 +11,4 @@ codex_src/
 uv.lock
 *uv.lock
 *.jsonl
+tests/
