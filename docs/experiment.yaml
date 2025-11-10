@@ -681,16 +681,16 @@
   notes: dev_testおよびlogs配下は.gitignore管理のため実装スクリプト本体は未コミット
 - date: '2025-11-09'
   time_utc: '09:59:46'
-  summary: マージ戦略を切替える/mergeコマンドと結果トラッキングを追加
+  summary: マージ戦略を manual / auto に整理し、結果トラッキングを追加
   details:
-  - SettingsStoreとSessionConfigにmerge設定を追加し、/merge(別名/marge)でfast_only/agent_only/fast_then_agentを選択できるようにした
-  - OrchestratorへMergeMode/MergeOutcomeを導入し、fast-forward成功/失敗の結果を記録してControllerとログへ伝播
+  - SettingsStoreとSessionConfigにmerge設定を追加し、/merge(別名/marge)でmanual(ホストFast-Forward) / auto(エージェント統合)を切り替えられるようにした
+  - OrchestratorへMergeMode/MergeOutcomeを導入し、fast-forward成功/自動統合/失敗などの結果を記録してControllerとログへ伝播
   - WorkflowRunnerがアウトカムをUIへ表示し、LogManagerはcycleログにmerge_outcomeイベントを追記
   - テストはbuilder/command/orchestratorワークフローにケースを追加し、uv run pytest(122件)で全通過を確認
   reproduce:
   - uv run pytest
   result: tests 122 passed
-  notes: /merge設定は~/.parallel-dev/config.yamlに永続化され、OSS公開時のデフォルト安全策としてfast_onlyを維持
+  notes: /merge設定は~/.parallel-dev/config.yamlに永続化され、デフォルトは manual (ホスト統合) とした
 - date: '2025-11-09'
   time_utc: '10:25:00'
   summary: pip配布向けにパッケージ名と導入手順を整備
@@ -698,7 +698,7 @@
   - pyproject.tomlのproject.nameを`pdev`へ変更し、将来的に`pip install pdev`で導入できるようメタデータを揃えた
   - READMEのセットアップ章を更新し、PyPI経由（pip install pdev → pdev）とソース/ローカル開発パターンを整理
   reproduce:
-- uv run pytest
+  - uv run pytest
   result: tests 122 passed
   notes: PyPI公開は未実施。今後公開すれば`pip install pdev`だけでCLIが起動できる
 - date: '2025-11-10'
@@ -724,14 +724,3 @@
   - uv run pytest
   result: tests 123 passed
   notes: autoモードでもtouch完了プロトコルを維持し、ホストは完了通知を待ってからメインを再開する
-- date: '2025-11-10'
-  time_utc: '07:20:01'
-  summary: evening CLIスクリプトをbossワークツリーへ統合
-  details:
-  - worker-2案をベースにdev_test/25-11-10-16_evening.pyを整備し、詳細ログとGreetingデータクラスを実装
-  - dev_test/evening.pyを互換ラッパとして追加し、要件どおりのファイル名と最新実装の両立を確保
-  - uv run実行でCLI出力とlogs/25-11-10-16_evening.log生成を確認
-  reproduce:
-  - uv run python dev_test/evening.py Alice
-  result: Good evening, Alice. が標準出力され、DEBUG/INFOログがlogs/25-11-10-16_evening.logへ記録
-  notes: 追加の要件変更なし。必要に応じてrecipient引数を省略するとデフォルトの"there"を使用。

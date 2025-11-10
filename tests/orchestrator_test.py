@@ -286,8 +286,9 @@ def test_auto_merge_requests_agent_commit(tmp_path):
 
     tmux.send_instruction_to_pane.assert_called_once()
     monitor.await_completion.assert_called_once()
-    worktree.merge_into_main.assert_called_once_with("parallel-dev/session-a/worker-1")
-    assert merge_outcome.status == "merged"
+    worktree.merge_into_main.assert_not_called()
+    assert merge_outcome.status == "delegate"
+    assert merge_outcome.reason == "agent_auto"
 
 
 def test_merge_failure_logs_message(dependencies):

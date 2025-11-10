@@ -676,6 +676,7 @@ class Orchestrator:
         *,
         selected: CandidateInfo,
         main_pane: str,
+        perform_merge: bool = True,
     ) -> MergeOutcome:
         self._tmux.interrupt_pane(pane_id=main_pane)
         merge_outcome = MergeOutcome(
@@ -683,7 +684,7 @@ class Orchestrator:
             status="skipped",
             branch=selected.branch,
         )
-        if selected.branch:
+        if perform_merge and selected.branch:
             try:
                 self._worktree.merge_into_main(selected.branch)
                 merge_outcome.status = "merged"
@@ -697,6 +698,9 @@ class Orchestrator:
                         pass
                 merge_outcome.error = str(exc)
                 merge_outcome.status = "failed"
+        elif not perform_merge:
+            merge_outcome.status = "delegate"
+            merge_outcome.reason = "agent_auto"
         if selected.session_id:
             self._tmux.promote_to_main(session_id=selected.session_id, pane_id=main_pane)
             bind_existing = getattr(self._monitor, "bind_existing_session", None)
@@ -745,7 +749,7 @@ class Orchestrator:
             )
 
         self._phase_log("コミット報告を受け取りました。", status="マージ処理中")
-        return self._finalize_selection(selected=selected, main_pane=layout.main_pane)
+        return self._finalize_selection(selected=selected, main_pane=layout.main_pane, perform_merge=False)
 
     def _resolve_candidate_pane(self, key: str, layout: CycleLayout) -> Optional[str]:
         if key == "boss":
@@ -766,41 +770,35 @@ class Orchestrator:
         worktree = str(selected.worktree)
         branch = selected.branch
         commit_message = f"Auto update from {selected.key}"
-        lines = [
-            "追加タスク: 以下の手順で成果物をコミットし、ホストへ共有してください。",
-            f"- 作業ディレクトリ: {worktree}",
-            f"- 対象ブランチ: {branch}",
-            "",
-            "手順:",
-            f"1. cd {worktree}",
-            "2. git status -sb で変更を確認してください。",
-            "3. 必要なファイルを git add してください (例: dev_test、docs/experiment.yaml など)。",
-            f"4. git commit -m \"{commit_message}\"",
-            f"5. git checkout main && git pull --ff-only && git merge --ff-only {branch} && git checkout {branch}",
-        ]
-        if flag_path:
-            flag_text = str(flag_path)
-            lines.append(f"6. コミットが完了したら `touch {flag_text}` で完了を通知してください。")
-            lines.append("7. 最後に /done を送り、途中でエラーがあればログを報告してください。")
-        else:
-            lines.append("6. コミット完了後に /done を送ってください。エラーが出れば内容を共有してください。")
-        return "\n".join(lines)
+        flag_text = str(flag_path) if flag_path else None
 
-    def _log_merge_delegate(self, branch: Optional[str], reason: str, error: Optional[str] = None) -> None:
-        if not self._log_hook:
-            return
-        reason_labels = {
-            "strategy_agent_only": "設定で自動マージを無効化",
-            "fast_forward_failed": "Fast-Forwardの失敗",
-        }
-        label = reason_labels.get(reason, reason)
-        message = f"[merge] ブランチ {branch or 'N/A'} の統合作業をエージェントに委譲します ({label})."
-        if error:
-            message += f" 詳細: {error}"
-        try:
-            self._log_hook(message)
-        except Exception:
-            pass
+        lines = [
+            "追加タスク: あなたが編集した成果物を本レポジトリへ統合してください。",
+            f"- 作業ディレクトリ: {worktree}",
+            f"- ブランチ: {branch}",
+            "",
+            "【目的】",
+            "- 必要なファイルだけをコミットし、main を fast-forward で最新化する",
+            "- 進捗や問題があれば必ずログに記録する",
+            "",
+            "【禁止事項】",
+            "- `git push --force` や `git reset --hard origin/main` などの破壊的操作",
+            "- main 以外のブランチを削除・上書きすること",
+            "- エラーを黙って無視すること",
+            "",
+            "【推奨フロー（状況に応じて調整可）】",
+            f"1. cd {worktree} && git status -sb で変更内容を確認",
+            "2. コミット対象のみ git add （例: dev_test, docs/experiment.yaml など）",
+            f"3. git commit -m \"{commit_message}\" （既存コミットを使い回さない）",
+            f"4. main を最新化して fast-forward で統合（例: git checkout main && git pull --ff-only && git merge --ff-only {branch} && git checkout {branch})",
+            "5. 衝突が発生した場合は安全な方法で解消し、解決できなければエラー内容とともに報告",
+        ]
+        if flag_text:
+            lines.append(f"6. 統合が完了したら `touch {flag_text}` で完了を通知し、/done で結果を報告してください。")
+        else:
+            lines.append("6. 統合が完了したら /done を送り、結果を報告してください。")
+        lines.append("※ 進め方に迷った場合は状況を説明して /done でホストの指示を仰いでください。")
+        return "\n".join(lines)
 
     def _phase_log(self, message: str, status: Optional[str] = None) -> None:
         if not self._log_hook:

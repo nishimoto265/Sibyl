@@ -1259,8 +1259,7 @@ class CLIController:
         error = outcome.error
         reason_key = outcome.reason
         reason_labels = {
-            "strategy_agent_only": "設定で自動マージを無効化",
-            "fast_forward_failed": "Fast-Forwardに失敗",
+            "agent_auto": "エージェントが統合を担当",
         }
         if status == "merged":
             self._emit(ControllerEventType.LOG, {"text": f"[merge] {branch} を fast-forward で main に反映しました。"})
