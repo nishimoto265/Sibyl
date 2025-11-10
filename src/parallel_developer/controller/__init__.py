@@ -317,6 +317,8 @@ class CLIController:
         name = parts[0].lower()
         if name == "/quit":
             name = "/exit"
+        if name == "/marge":
+            name = "/merge"
         option = parts[1].strip() if len(parts) > 1 else None
         if option == "":
             option = None

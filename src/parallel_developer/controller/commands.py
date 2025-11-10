@@ -129,5 +129,4 @@ def build_command_specs(
         "/help": CommandSpecEntry("コマンド一覧を表示する", controller._cmd_help),
         "/exit": CommandSpecEntry("CLI を終了する", controller._cmd_exit),
     }
-    specs["/marge"] = specs["/merge"]
     return specs
