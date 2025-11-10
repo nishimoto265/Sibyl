@@ -724,3 +724,14 @@
   - uv run pytest
   result: tests 123 passed
   notes: autoモードでもtouch完了プロトコルを維持し、ホストは完了通知を待ってからメインを再開する
+- date: '2025-11-10'
+  time_utc: '08:13:20'
+  summary: dev_testへEVENINGラッパーと実装を統合
+  details:
+  - worker-1案を採用し、互換レイヤーdev_test/evening.pyと実装本体dev_test/25-11-10-16_evening.pyを追加
+  - 実装では--name引数を受け取り、詳細なDEBUG/INFOログをlogs/25-11-10-16_evening.logへ出力するFileHandlerを構成
+  - `uv run python dev_test/evening.py --name world`でCLIを動作確認し、標準出力とログ両方が生成されることを確認
+  reproduce:
+  - uv run python dev_test/evening.py --name world
+  result: Good evening, world! Take a deep breath and enjoy the night. とログが生成される
+  notes: dev_test配下のラッパーはIMPLEMENTATION_FILENAMEを書き換えるだけで将来の差し替えに対応できる
