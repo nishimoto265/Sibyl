@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, List, Mapping
 from unittest.mock import Mock, call
+import subprocess
 
 import pytest
 
@@ -297,6 +298,78 @@ def test_auto_merge_requests_agent_commit(tmp_path):
     assert merge_outcome.reason == "agent_auto"
 
 
+def test_pull_main_after_auto_rebases_on_ff_failure(tmp_path, monkeypatch):
+    tmux = Mock()
+    worktree = Mock()
+    monitor = Mock()
+    log_manager = Mock()
+    logs: list[str] = []
+    worktree.root = tmp_path
+    orchestrator = Orchestrator(
+        tmux_manager=tmux,
+        worktree_manager=worktree,
+        monitor=monitor,
+        log_manager=log_manager,
+        worker_count=1,
+        session_name="parallel-dev",
+        log_hook=logs.append,
+    )
+
+    recorded: list[list[str]] = []
+
+    def fake_run(args, **kwargs):  # type: ignore[override]
+        recorded.append(list(args))
+        if "--ff-only" in args:
+            raise subprocess.CalledProcessError(1, args, stderr="ff-only failed")
+        if "rev-parse" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="origin/main\n", stderr="")
+        if "--rebase" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    orchestrator._pull_main_after_auto()
+
+    assert any("--ff-only" in call for call in recorded)
+    assert any("rev-parse" in call for call in recorded)
+    assert any("--rebase" in call for call in recorded)
+    assert len(logs) == 1
+    assert "ff-only failed" in logs[0]
+
+
+def test_pull_main_after_auto_logs_conflict(tmp_path, monkeypatch):
+    tmux = Mock()
+    worktree = Mock()
+    monitor = Mock()
+    log_manager = Mock()
+    logs: list[str] = []
+    worktree.root = tmp_path
+    orchestrator = Orchestrator(
+        tmux_manager=tmux,
+        worktree_manager=worktree,
+        monitor=monitor,
+        log_manager=log_manager,
+        worker_count=1,
+        session_name="parallel-dev",
+        log_hook=logs.append,
+    )
+
+    def fake_run(args, **kwargs):  # type: ignore[override]
+        if "--ff-only" in args:
+            raise subprocess.CalledProcessError(1, args, stderr="ff-only failed")
+        if "rev-parse" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="origin/main\n", stderr="")
+        if "--rebase" in args:
+            raise subprocess.CalledProcessError(1, args, stderr="CONFLICT (content): file.txt")
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    orchestrator._pull_main_after_auto()
+
+    assert any("pull --rebase origin main" in entry for entry in logs)
+    assert any("ff-only failed" in entry for entry in logs)
 
 
 def test_orchestrator_handles_worker_continuation(dependencies):

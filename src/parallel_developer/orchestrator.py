@@ -799,21 +799,66 @@ class Orchestrator:
         root = getattr(self._worktree, "root", None)
         if not root:
             return
+        ff_cmd = ["git", "-C", str(root), "pull", "--ff-only"]
         try:
             subprocess.run(
-                ["git", "-C", str(root), "pull", "--ff-only"],
+                ff_cmd,
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            return
         except subprocess.CalledProcessError as exc:  # noqa: PERF203
-            message = "[merge] ホスト側 git pull --ff-only が失敗しました: " + (exc.stderr or exc.stdout or str(exc))
+            self._log_git_failure("git pull --ff-only", exc)
+
+        remote, branch = self._resolve_upstream_tracking(root)
+        rebase_cmd = ["git", "-C", str(root), "pull", "--rebase", remote, branch]
+        try:
+            subprocess.run(
+                rebase_cmd,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            return
+        except subprocess.CalledProcessError as exc:  # noqa: PERF203
+            conflict_msg = (
+                "[merge] ホスト側 git pull --rebase {remote} {branch} が失敗しました: {detail}. "
+                "衝突を解消し `git rebase --continue` したら /done で次へ進めてください。"
+            ).format(remote=remote, branch=branch, detail=exc.stderr or exc.stdout or str(exc))
             if self._log_hook:
                 try:
-                    self._log_hook(message)
+                    self._log_hook(conflict_msg)
                 except Exception:
                     pass
+
+    def _resolve_upstream_tracking(self, root: Path) -> tuple[str, str]:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            upstream = result.stdout.strip()
+            if upstream and "/" in upstream:
+                remote, branch = upstream.split("/", 1)
+                return remote, branch
+        except subprocess.CalledProcessError:
+            pass
+        return "origin", "main"
+
+    def _log_git_failure(self, action: str, exc: subprocess.CalledProcessError) -> None:
+        if not self._log_hook:
+            return
+        message = f"[merge] ホスト側 {action} が失敗しました: {exc.stderr or exc.stdout or exc}"
+        try:
+            self._log_hook(message)
+        except Exception:
+            pass
 
     def _wait_for_flag(self, flag_path: Path, timeout: float = 600.0) -> None:
         deadline = time.time() + timeout
