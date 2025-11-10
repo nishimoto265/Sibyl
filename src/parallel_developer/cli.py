@@ -195,27 +195,27 @@ class ParallelDeveloperApp(App):
         if self._suppress_command_change:
             return
         self.controller.history_reset()
-        value = self.command_input.text
-        if value == self._last_command_text:
+        raw_value = self.command_input.text
+        if raw_value == self._last_command_text:
             return
-        if not value:
-            self._last_command_text = value
+        self._last_command_text = raw_value
+        processed = raw_value.replace("\n", "")
+        if not processed:
+            self._pending_command = None
             self._hide_command_palette()
             return
-        if not value.startswith("/"):
-            self._last_command_text = value
+        if not processed.startswith("/"):
+            self._pending_command = None
             self._hide_command_palette()
             return
-        command, has_space, remainder = value.partition(" ")
+        command, has_space, remainder = processed.partition(" ")
         command = command.lower()
         if not has_space:
             self._pending_command = None
             self._update_command_suggestions(command)
-            self._last_command_text = value
             return
         spec = self.controller._command_specs.get(command)
         if spec is None:
-            self._last_command_text = value
             self._hide_command_palette()
             return
         options = self.controller.get_command_options(command)
@@ -236,12 +236,10 @@ class ParallelDeveloperApp(App):
             ):
                 filtered.append(PaletteItem(label, opt.value))
         if not filtered:
-            self._last_command_text = value
             self._hide_command_palette()
             return
         self._pending_command = command
         self._show_command_palette(filtered, mode="options")
-        self._last_command_text = value
 
     def _handle_controller_event(self, event_type: str, payload: Dict[str, object]) -> None:
         def _post() -> None:

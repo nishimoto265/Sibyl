@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -749,6 +750,7 @@ class Orchestrator:
             )
 
         self._phase_log("コミット報告を受け取りました。", status="マージ処理中")
+        self._pull_main_after_auto()
         return self._finalize_selection(selected=selected, main_pane=layout.main_pane, perform_merge=False)
 
     def _resolve_candidate_pane(self, key: str, layout: CycleLayout) -> Optional[str]:
@@ -794,11 +796,29 @@ class Orchestrator:
             "5. 衝突が発生した場合は安全な方法で解消し、解決できなければエラー内容とともに報告",
         ]
         if flag_text:
-            lines.append(f"6. 統合が完了したら `touch {flag_text}` で完了を通知し、/done で結果を報告してください。")
-        else:
-            lines.append("6. 統合が完了したら /done を送り、結果を報告してください。")
-        lines.append("※ 進め方に迷った場合は状況を説明して /done でホストの指示を仰いでください。")
+            lines.append(f"6. 統合が完了したら `touch {flag_text}` で完了を通知してください。")
+        lines.append("※ 進め方に迷った場合やエラーが発生した場合は状況とログを共有してください。")
         return "\n".join(lines)
+
+    def _pull_main_after_auto(self) -> None:
+        root = getattr(self._worktree, "root", None)
+        if not root:
+            return
+        try:
+            subprocess.run(
+                ["git", "-C", str(root), "pull", "--ff-only"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:  # noqa: PERF203
+            message = "[merge] ホスト側 git pull --ff-only が失敗しました: " + (exc.stderr or exc.stdout or str(exc))
+            if self._log_hook:
+                try:
+                    self._log_hook(message)
+                except Exception:
+                    pass
 
     def _phase_log(self, message: str, status: Optional[str] = None) -> None:
         if not self._log_hook:
