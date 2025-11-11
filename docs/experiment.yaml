@@ -901,3 +901,25 @@
   - pipx install dist/pdev-0.1.2-py3-none-any.whl --force
   result: テスト122件成功、pipx環境もVersion: 0.1.2に更新済み
   notes: testsディレクトリはgit管理外のため差分はローカルのみ
+- date: '2025-11-11'
+  time_utc: '06:24:53'
+  summary: testsディレクトリをGit管理に戻した
+  details:
+  - git checkout <最新コミット> -- tests で以前のテスト群を復元し、.gitignore から tests/ を削除
+  - Ubuntu等でcloneした際に uv run pytest を即座に再現できるようにするため
+  reproduce:
+  - git checkout e992111 -- tests
+  - sed -i '' '/^tests\//d' .gitignore  # Linuxは -i '/^tests\//d'
+  result: git status に tests 配下が追加され、今後のコミットに含まれる
+  notes: dev_test/ は引き続きローカル専用のため ignore を維持
+- date: '2025-11-11'
+  time_utc: '06:26:25'
+  summary: 復元したテストを最新デフォルトに追随させて再実行
+  details:
+  - controller_command_test.pyで「既にAuto」のログも許容するよう期待値を調整
+  - workflow_test.pyで手動フローを明示設定し、continueアクションの意図を維持
+  - uv run pytestで122件が再び成功することを確認
+  reproduce:
+  - uv run pytest
+  result: 122 passed、full_auto/autoデフォルトでもテストが通る
+  notes: これでUbuntuでcloneしてもテストがそのまま実行可能

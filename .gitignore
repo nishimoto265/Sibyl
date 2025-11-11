@@ -13,4 +13,3 @@ dist/
 uv.lock
 *uv.lock
 *.jsonl
-tests/
