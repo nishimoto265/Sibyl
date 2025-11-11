@@ -853,3 +853,14 @@
   - head -n 5 pyproject.toml
   result: pyproject.tomlが通常ファイルとして存在し、symlinkではない
   notes: 今後バックアップを置く場合はdocs/backups配下などに保管予定
+- date: '2025-11-11'
+  time_utc: '05:49:26'
+  summary: dev_test/とtests/をリポジトリから除外
+  details:
+  - git rm --cachedでdev_test/とtests/をインデックスから外し、ローカルには残したまま公開リポジトリから削除
+  - .gitignoreへdev_test/を追記し（tests/は既存のまま）、今後誤ってコミットしないようにした
+  reproduce:
+  - git rm -r --cached dev_test tests
+  - printf "dev_test/\n" >> .gitignore
+  result: git statusで両ディレクトリが削除扱いとなり、`git push`後は公開リポジトリに含まれない
+  notes: TTD用のtestsはローカル専用とし、必要なら別リポジトリやアーカイブで共有
