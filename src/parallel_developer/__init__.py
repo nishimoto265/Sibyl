@@ -1,5 +1,5 @@
-"""Parallel Developer package metadata."""
+"""Sibyl CLI package metadata (formerly Parallel Developer)."""
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

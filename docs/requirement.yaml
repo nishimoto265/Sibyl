@@ -4,7 +4,7 @@ metadata:
   language: "ja"
   source_summary: >
     CLI上で複数のコーディングエージェントを並列稼働させ、最終的にBossエージェントが
-    出力を評価・統合できるOSSを開発する。
+    出力を評価・統合できるOSS（Sibyl、旧Parallel Developer）を開発する。
 現在の状況:
   ステータス: "実装・検証中"
   未解決事項:

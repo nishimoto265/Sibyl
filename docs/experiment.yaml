@@ -923,3 +923,28 @@
   - uv run pytest
   result: 122 passed、full_auto/autoデフォルトでもテストが通る
   notes: これでUbuntuでcloneしてもテストがそのまま実行可能
+- date: '2025-11-11'
+  time_utc: '06:39:21'
+  summary: CLI名称をSibylへリネームし、パッケージ名/コマンドを更新
+  details:
+  - pyproject.tomlのproject.nameを`sibyl`へ変更し、versionを0.2.0に引き上げた上で`sibyl`エントリポイントを追加（旧`pdev`/`parallel-dev`も互換で維持）
+  - README.mdとdocs/requirement.yamlをSibyl表記へ更新し、pipxクイックスタートを`pipx install sibyl==0.2.0`→`sibyl`に差し替え
+  - CLI内部のメタデータ/__version__や自動コミット接頭辞を`sibyl-auto-save`系列へ変更
+  - dist/sibyl-0.2.0を生成後、`pipx uninstall pdev`→`pipx install dist/sibyl-0.2.0-py3-none-any.whl`で再インストールし、`pipx runpip sibyl show sibyl`でVersion 0.2.0を確認
+  reproduce:
+  - sed -n '1,40p' README.md
+  - rg "sibyl" pyproject.toml src/parallel_developer/__init__.py
+  - pipx runpip sibyl show sibyl | grep Version
+  result: `sibyl`コマンドでCLIが起動し、旧`pdev`も後方互換として残る
+  notes: ログ/ディレクトリ名は `.parallel-dev` のまま据え置き、後方互換性を維持
+- date: '2025-11-11'
+  time_utc: '06:42:36'
+  summary: README冒頭のスクリーンショットを最新Sibyl UIに差し替え
+  details:
+  - 共有された`sibyl_workflow.png`をdocs/assetsへ追加し、旧25-11-11-14_cli_overview.pngの代わりにREADMEで参照
+  - macOS由来の`.DS_Store`を削除し、.gitignoreへ追加して今後コミットに混入しないようにした
+  reproduce:
+  - sed -n '1,10p' README.md
+  - ls docs/assets
+  result: README冒頭がsibyl_workflow.pngを表示し、余計な`.DS_Store`は出力されない
+  notes: 旧スクリーンショットファイルは不要になったため追跡から削除

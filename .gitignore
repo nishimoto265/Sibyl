@@ -13,3 +13,4 @@ dist/
 uv.lock
 *uv.lock
 *.jsonl
+.DS_Store

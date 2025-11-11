@@ -1,4 +1,4 @@
-"""Controller and orchestration helpers for the Parallel Developer CLI."""
+"""Controller and orchestration helpers for the Sibyl CLI."""
 
 from __future__ import annotations
 
@@ -719,7 +719,7 @@ class CLIController:
             self._emit(ControllerEventType.LOG, {"text": f"git add に失敗しました: {exc}"})
             return False
 
-        prefix = "pdev-auto-save" if auto else "pdev-manual-save"
+        prefix = "sibyl-auto-save" if auto else "sibyl-manual-save"
         message = f"{prefix} {datetime.utcnow().isoformat(timespec='seconds')}Z"
         try:
             repo.index.commit(message)
