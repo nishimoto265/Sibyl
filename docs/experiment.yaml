@@ -927,14 +927,14 @@
   time_utc: '06:39:21'
   summary: CLI名称をSibylへリネームし、パッケージ名/コマンドを更新
   details:
-  - pyproject.tomlのproject.nameを`sibyl`へ変更し、versionを0.2.0に引き上げた上で`sibyl`エントリポイントを追加（旧`pdev`/`parallel-dev`も互換で維持）
-  - README.mdとdocs/requirement.yamlをSibyl表記へ更新し、pipxクイックスタートを`pipx install sibyl==0.2.0`→`sibyl`に差し替え
+  - pyproject.tomlのproject.nameを`sibyl-cli`へ変更し、versionを0.2.0に引き上げた上で`sibyl`エントリポイントを維持（旧`pdev`/`parallel-dev`も互換で同梱）
+  - README.mdとdocs/requirement.yamlをSibyl表記へ更新し、pipxクイックスタートを`pipx install sibyl-cli==0.2.0`→`sibyl`に差し替え
   - CLI内部のメタデータ/__version__や自動コミット接頭辞を`sibyl-auto-save`系列へ変更
-  - dist/sibyl-0.2.0を生成後、`pipx uninstall pdev`→`pipx install dist/sibyl-0.2.0-py3-none-any.whl`で再インストールし、`pipx runpip sibyl show sibyl`でVersion 0.2.0を確認
+  - dist/sibyl_cli-0.2.0.* を生成後、`pipx uninstall pdev`→`pipx install dist/sibyl_cli-0.2.0-py3-none-any.whl`で再インストールし、`pipx runpip sibyl-cli show sibyl-cli`でVersion 0.2.0を確認
   reproduce:
   - sed -n '1,40p' README.md
   - rg "sibyl" pyproject.toml src/parallel_developer/__init__.py
-  - pipx runpip sibyl show sibyl | grep Version
+  - pipx runpip sibyl-cli show sibyl-cli | grep Version
   result: `sibyl`コマンドでCLIが起動し、旧`pdev`も後方互換として残る
   notes: ログ/ディレクトリ名は `.parallel-dev` のまま据え置き、後方互換性を維持
 - date: '2025-11-11'
@@ -948,3 +948,18 @@
   - ls docs/assets
   result: README冒頭がsibyl_workflow.pngを表示し、余計な`.DS_Store`は出力されない
   notes: 旧スクリーンショットファイルは不要になったため追跡から削除
+- date: '2025-11-11'
+  time_utc: '06:54:53'
+  summary: 旧`pdev`/`parallel-dev`エントリポイントを廃止し、sibyl-cli 0.2.1を公開
+  details:
+  - pyprojectのscriptsから`pdev`/`parallel-dev`を削除し、パッケージ名sibyl-cliのバージョンを0.2.1へ更新（README/pipx手順も `pipx install sibyl-cli==0.2.1` に差し替え）
+  - docs/requirement.yamlのコマンド例を`sibyl --instruction ...`へ書き換え、旧名称への依存を解消
+  - `uv run pytest`→122件成功後、`uv build`でdist/sibyl_cli-0.2.1.*を再生成し、`pipx install dist/sibyl_cli-0.2.1-py3-none-any.whl`でローカル環境を更新
+  - `pipx runpip sibyl-cli show sibyl-cli | grep Version`で0.2.1を確認し、`uv publish ...`でPyPIへアップロード
+  reproduce:
+  - uv run pytest
+  - uv build
+  - pipx install dist/sibyl_cli-0.2.1-py3-none-any.whl --force
+  - pipx runpip sibyl-cli show sibyl-cli | grep Version
+  result: インストール可能なコマンドは`sibyl`のみになり、PyPI上の`sibyl-cli 0.2.1`を`pipx install sibyl-cli==0.2.1`で取得できる
+  notes: `.parallel-dev` ディレクトリ名など内部構造は互換のため据え置き

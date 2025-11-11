@@ -1,6 +1,6 @@
 [project]
-name = "sibyl"
-version = "0.2.0"
+name = "sibyl-cli"
+version = "0.2.1"
 description = "CLI orchestrator for parallel Codex agents with tmux and git worktree integration."
 authors = [{ name = "Parallel Developer Team" }]
 requires-python = ">=3.11"
@@ -26,8 +26,6 @@ dev = [
 
 [project.scripts]
 sibyl = "parallel_developer.cli:run"
-pdev = "parallel_developer.cli:run"
-parallel-dev = "parallel_developer.cli:run"
 
 [build-system]
 requires = ["hatchling"]

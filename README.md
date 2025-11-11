@@ -15,11 +15,11 @@ tmux と git worktree を土台に、複数の Codex/LLM エージェントを�
 ## セットアップ
 ### クイックスタート
 ```bash
-pipx install sibyl      # 既存インストールを上書きする場合は --force
+pipx install sibyl-cli==0.2.1     # 既存インストールを上書きする場合は --force
 sibyl                             # 起動、Ctrl+Q で終了
 ```
 
-`pdev` / `parallel-dev` という旧コマンドも互換のため同時インストールされます。バージョン更新時は `pipx upgrade sibyl` を実行してください。pipx 自体がまだなら、macOS なら `brew install pipx && pipx ensurepath`、その他環境なら `python3 -m pip install --user pipx` のあと `pipx ensurepath` を実行し、シェルを再起動して PATH を反映させてください。
+バージョン更新時は `pipx upgrade sibyl-cli` を実行してください。pipx 自体がまだなら、macOS なら `brew install pipx && pipx ensurepath`、その他環境なら `python3 -m pip install --user pipx` のあと `pipx ensurepath` を実行し、シェルを再起動して PATH を反映させてください。
 
 
 ## 使い方の流れ

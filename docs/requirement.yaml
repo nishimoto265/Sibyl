@@ -20,14 +20,14 @@ metadata:
     - "各エージェントのログを詳細に取得し、障害箇所を追跡できること。"
     - "Bossエージェントが任意のエージェント成果物を選択・統合し、継続作業に接続できること。"
   並列起動フロー:
-    - "ユーザーは`parallel-dev --instruction \"...\" --workers N`でメインCodexへ指示を送る。"
+    - "ユーザーは`sibyl --instruction \"...\" --workers N`でメインCodexへ指示を送る。"
     - "Orchestratorは指示を保存し、メインセッションへCtrl+Cを2回送ってCodexを安全に停止する。"
     - "共有された指示を基に、各ワークツリー用tmuxペインで`codex resume <main_session_id>`を実行し、Esc×2→Enterで独立セッションIDを取得する。"
     - "workerはフォーク後にEnterのみを送信して処理を確定し、完了時はホストが提示する完了フラグ（例: `~/.parallel-dev/sessions/<session_id>/signals/<cycle>/worker-1.done`）を `touch` して完了を通知する。"
     - "全worker完了後にBossが同様にフォークし、評価JSONを返したのちBoss用フラグ（例: `~/.parallel-dev/sessions/<session_id>/signals/<cycle>/boss.done`）を `touch` して完了を通知する。"
 詳細フロー:
   前提:
-    - "`parallel-dev --instruction \"...\" --workers N` が起動時に指示を受信し、末尾へ完了フラグの作成/削除手順を含むプロトコルを付与する。"
+    - "`sibyl --instruction \"...\" --workers N` が起動時に指示を受信し、末尾へ完了フラグの作成/削除手順を含むプロトコルを付与する。"
     - "メインCodexは`codex`で起動し、指示送信後にCtrl+C×2で中断して履歴を保持する。"
     - "worker Codexはフォークされた履歴を共有し、Esc×2→Enterで独立セッションへ派生した後にEnterのみを送信する。"
     - "Boss Codexは全worker完了後にフォークされ、score/skipモードなら評価JSONを返した時点で完了、rewriteモードのみ追加統合作業を終えて完了フラグを `touch` する。"
@@ -56,7 +56,7 @@ metadata:
   cli:
     目的: "指示受付・パイプライン制御・結果承認を一元化するフロントエンド。将来的にGUIへ移行できるAPI設計を前提とする。"
     機能:
-      - "指示入力コマンド（例: `parallel-dev --instruction \"...\" --workers 2`）でメインCodexへ送信。"
+    - "指示入力コマンド（例: `sibyl --instruction \"...\" --workers 2`）でメインCodexへ送信。"
       - "tmuxレイアウト管理（セッション1個 + メイン/Boss/worker*Nペイン、Nのデフォルトは3）。"
       - "ワークフロー状態遷移管理（指示受付→フォーク展開→完了検知→Boss採点→ユーザー選択→mainマージ→次サイクル）とスコアボード表示。"
       - "REST/IPC化を見据えた内部APIを提供し、将来的なGUI接続を想定。"
