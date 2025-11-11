@@ -97,14 +97,18 @@ class TmuxAttachManager:
             )
             command = ["osascript", "-e", apple_script]
             try:
-                return subprocess.run(command, check=False)
+                result = subprocess.run(command, check=False)
+                if result.returncode == 0:
+                    return result
             except FileNotFoundError:
                 # Fall through to generic fallback below.
                 pass
         elif "linux" in system:
             command = ["gnome-terminal", "--", "bash", "-lc", command_string]
             try:
-                return subprocess.run(command, check=False)
+                result = subprocess.run(command, check=False)
+                if result.returncode == 0:
+                    return result
             except FileNotFoundError:
                 # gnome-terminal not available; fall back to shell attach.
                 pass

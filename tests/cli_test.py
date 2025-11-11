@@ -202,6 +202,32 @@ def test_tmux_attach_manager_linux(monkeypatch, tmp_path):
     assert command[4] == expected_cmd
 
 
+def test_tmux_attach_manager_linux_fallback_when_gnome_fails(monkeypatch, tmp_path):
+    manager = TmuxAttachManager()
+    commands = []
+
+    def fake_run(command, check=False):
+        commands.append(command)
+        if command and command[0] == "gnome-terminal":
+            return SimpleNamespace(returncode=1)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/bin/bash" if cmd == "bash" else None)
+
+    session = "parallel-dev-test"
+    manager.attach(session, workdir=tmp_path)
+
+    assert len(commands) == 2
+    gnome_cmd, fallback_cmd = commands
+    assert gnome_cmd[:4] == ["gnome-terminal", "--", "bash", "-lc"]
+    expected_cmd = f"tmux attach -t {shlex.quote(session)}"
+    assert gnome_cmd[4] == expected_cmd
+    assert fallback_cmd[:2] == ["bash", "-lc"]
+    assert fallback_cmd[2] == expected_cmd
+
+
 def test_load_session_recreates_with_session_namespace(tmp_path, monkeypatch):
     repo = git.Repo.init(tmp_path)
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
