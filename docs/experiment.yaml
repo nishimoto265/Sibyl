@@ -864,3 +864,13 @@
   - printf "dev_test/\n" >> .gitignore
   result: git statusで両ディレクトリが削除扱いとなり、`git push`後は公開リポジトリに含まれない
   notes: TTD用のtestsはローカル専用とし、必要なら別リポジトリやアーカイブで共有
+- date: '2025-11-11'
+  time_utc: '05:53:38'
+  summary: READMEの/flowと/boss節を詳細化
+  details:
+  - `/flow`セクションへmanual/auto_review/auto_select/full_autoを個別に説明する箇条書きを追加
+  - `/boss`セクションもskip/score/rewriteそれぞれの役割を1行ずつ明記
+  reproduce:
+  - sed -n '60,90p' README.md
+  result: /flowと/bossの各モードが具体的に説明され、他コマンドと同じ書きぶりになった
+  notes: CLI上のコマンドオプション説明と揃えてREADMEで迷わないようにするため
