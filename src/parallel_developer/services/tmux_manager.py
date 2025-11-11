@@ -85,13 +85,7 @@ class TmuxLayoutManager:
         command = f"cd {shlex.quote(str(boss_path))} && {self._codex_command(f'codex resume {shlex.quote(str(base_session_id))}')}"
         self._send_command(pane_id, command)
         self._maybe_wait()
-        pane = self._get_pane(pane_id)
-        pane.send_keys("C-[", enter=False)
-        time.sleep(self.backtrack_delay)
-        pane.send_keys("C-[", enter=False)
-        time.sleep(self.backtrack_delay)
-        pane.send_keys("", enter=True)
-        time.sleep(self.backtrack_delay)
+        self._send_prompt_reset(pane_id=pane_id)
         self._maybe_wait()
 
     def fork_workers(
@@ -112,13 +106,8 @@ class TmuxLayoutManager:
             self.interrupt_pane(pane_id=pane_id)
             command = f"cd {shlex.quote(str(worker_path))} && {self._codex_command(f'codex resume {shlex.quote(str(base_session_id))}')}"
             self._send_command(pane_id, command)
-        self._maybe_wait()
-        if worker_list:
-            self._broadcast_keys(worker_list, "C-[", enter=False)
-            self._broadcast_keys(worker_list, "C-[", enter=False)
-            for pane_id in worker_list:
-                pane = self._get_pane(pane_id)
-                pane.send_keys("", enter=True)
+            time.sleep(max(0.5, self.backtrack_delay))
+            self._send_prompt_reset(pane_id=pane_id)
         self._maybe_wait()
         return worker_list
 
@@ -221,12 +210,14 @@ class TmuxLayoutManager:
     def _codex_command(self, command: str) -> str:
         return command
 
-    def _broadcast_keys(self, pane_ids: Sequence[str], key: str, *, enter: bool) -> None:
-        for pane_id in pane_ids:
-            pane = self._get_pane(pane_id)
-            pane.send_keys(key, enter=enter)
-        if self.backtrack_delay > 0:
-            time.sleep(self.backtrack_delay)
+    def _send_prompt_reset(self, *, pane_id: str) -> None:
+        pane = self._get_pane(pane_id)
+        pane.send_keys("C-[", enter=False)
+        time.sleep(max(0.1, self.backtrack_delay))
+        pane.send_keys("C-[", enter=False)
+        time.sleep(max(0.1, self.backtrack_delay))
+        pane.send_keys("", enter=True)
+        time.sleep(max(0.1, self.backtrack_delay))
 
     def _configure_session(self, session) -> None:
         commands = [

@@ -203,6 +203,11 @@ class CodexMonitor:
             for rollout_path in paths:
                 self._mark_rollout_seen(baseline_map, rollout_path)
                 session_id = self._parse_session_meta(rollout_path)
+                session_id = self._wait_for_session_identifier(
+                    rollout_path,
+                    session_id,
+                    timeout_seconds=min(2.0, remaining),
+                )
                 try:
                     self.register_session(
                         pane_id=pane_id,
@@ -247,6 +252,11 @@ class CodexMonitor:
                     break
                 pane_id = worker_panes[pane_index]
                 session_id = self._parse_session_meta(path)
+                session_id = self._wait_for_session_identifier(
+                    path,
+                    session_id,
+                    timeout_seconds=min(2.0, remaining),
+                )
                 try:
                     self.register_session(pane_id=pane_id, session_id=session_id, rollout_path=path)
                 except SessionReservationError:
@@ -535,12 +545,35 @@ class CodexMonitor:
                 return new_paths
             time.sleep(self.poll_interval)
 
+    def _wait_for_session_meta(self, rollout_path: Path, *, timeout_seconds: float = 1.0) -> Optional[str]:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            ident = self._extract_session_meta(rollout_path)
+            if ident:
+                return ident
+            time.sleep(min(self.poll_interval, 0.1))
+        return None
+
     def _parse_session_meta(self, rollout_path: Path) -> str:
         session_id = self._extract_session_meta(rollout_path)
         if session_id:
             return session_id
         suffix = int(time.time() * 1000)
         return f"unknown-{suffix}"
+
+    def _wait_for_session_identifier(
+        self,
+        rollout_path: Path,
+        session_id: Optional[str],
+        *,
+        timeout_seconds: float = 1.0,
+    ) -> str:
+        if session_id and not session_id.startswith("unknown-"):
+            return session_id
+        resolved = self._wait_for_session_meta(rollout_path, timeout_seconds=timeout_seconds)
+        if resolved:
+            return resolved
+        return session_id or self._parse_session_meta(rollout_path)
 
     def _extract_session_meta(self, rollout_path: Path) -> Optional[str]:
         try:

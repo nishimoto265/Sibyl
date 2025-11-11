@@ -134,6 +134,86 @@ def test_monitor_force_completion_during_wait(tmp_path: Path):
     assert completion["session-force"].get("forced") is True
 
 
+def test_register_new_rollout_waits_for_session_meta(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    codex_root = tmp_path / "codex"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="delayed-main",
+    )
+
+    baseline = monitor.snapshot_rollouts()
+    rollout_path = codex_root / "2025" / "11" / "11" / "rollout-main.jsonl"
+
+    def create_rollout():
+        rollout_path.parent.mkdir(parents=True, exist_ok=True)
+        rollout_path.touch()
+        time.sleep(0.05)
+        rollout_path.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "session-main-delayed",
+                        "timestamp": "2025-11-11T00:00:00Z",
+                        "cwd": "/repo",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    threading.Thread(target=create_rollout, daemon=True).start()
+    session_id = monitor.register_new_rollout(pane_id="pane-main", baseline=baseline, timeout_seconds=0.5)
+    assert session_id == "session-main-delayed"
+
+
+def test_register_worker_rollouts_waits_for_session_meta(tmp_path: Path):
+    session_map = tmp_path / "sessions_map.yaml"
+    codex_root = tmp_path / "codex"
+    monitor = CodexMonitor(
+        logs_dir=tmp_path,
+        session_map_path=session_map,
+        codex_sessions_root=codex_root,
+        poll_interval=0.01,
+        session_namespace="delayed-workers",
+    )
+
+    baseline = monitor.snapshot_rollouts()
+    rollout_path = codex_root / "2025" / "11" / "11" / "rollout-worker.jsonl"
+
+    def create_worker_rollout():
+        rollout_path.parent.mkdir(parents=True, exist_ok=True)
+        rollout_path.touch()
+        time.sleep(0.05)
+        rollout_path.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "session-worker-delayed",
+                        "timestamp": "2025-11-11T00:00:01Z",
+                        "cwd": "/repo/worker",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    threading.Thread(target=create_worker_rollout, daemon=True).start()
+    mapping = monitor.register_worker_rollouts(
+        worker_panes=["pane-worker"],
+        baseline=baseline,
+        timeout_seconds=0.5,
+    )
+    assert mapping == {"pane-worker": "session-worker-delayed"}
+
+
 def test_monitor_detects_new_sessions(tmp_path: Path):
     session_map = tmp_path / "sessions_map.yaml"
     codex_root = tmp_path / "codex"
